@@ -1,115 +1,127 @@
-import pygame
-import random
-import math
+import numba as nb
 import numpy as np
-import os
-import time
-import matplotlib.pyplot as plt
-import matplotlib 
-matplotlib.use('TKAgg')
+import pygame
+import math
+np.random.seed(0)
 
-# Constants
 WIDTH, HEIGHT = 800, 800
-NUM_BOIDS = 50
-MAX_SPEED = 3
-BOID_SIZE = 5
-BOID_LENGTH = 10
-BOID_COLOR = (0, 0, 0)
+
+CLASSES = np.array([200, 10])
+NUM_BOIDS = np.sum(CLASSES)
+VISIBLE_RADIUS = np.array([[50, 50],
+                          [50, 50]])
+SEPARATION_RADIUS = np.array([[10, 10],
+                             [10, 10]])
+ALIGNMENT_WEIGHT = np.array([[0.05, 0.05], 
+                             [0.05, 0.05]])
+COHESION_WEIGHT = np.array([[0.005, 0], 
+                            [0.005, 0.005]])
+SEPARATION_WEIGHT = np.array([[0.1, 0.9], 
+                              [0.1, 0.1]])
+
+TRUN_FACTOR = 0.2
+BOID_LENGTH = [10, 14]
 BACKGROUND_COLOR = (220, 220, 220)
-NEIGHBOR_RADIUS = 50
-SEPARATION_RADIUS = 20
-ALIGNMENT_WEIGHT = 0.05
-COHESION_WEIGHT = 0.005
-SEPARATION_WEIGHT = 0.05
-TRUN_FACTOR = 0.3
-FIGS_FOLDER = "figs"
-MARGIN = {'left': 150, 'right': WIDTH-150, 'top':150, 'bottom': HEIGHT-150}
-BOUNCE_OF_EDGES = False
+BOID_COLOR = [(0, 0, 0), (255, 0, 0)]
 
-class Boid:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.vx = random.uniform(-1, 1)
-        self.vy = random.uniform(-1, 1)
+MAX_SPEED = 3
+MARGIN_LEFT=100; MARGIN_RIGHT=WIDTH-100; MARGIN_TOP=100; MARGIN_BOTTOM=HEIGHT-100
 
-    def update(self, flock, cohesion, alignment, separation):
-        dx, dy = self.compute_movement(flock, cohesion, alignment, separation)
-        self.vx += dx
-        self.vy += dy
-        speed = math.sqrt(self.vx ** 2 + self.vy ** 2)
-        if speed <= 0:
-            speed = 0.001
-        scale = MAX_SPEED / speed
-        self.vx *= scale
-        self.vy *= scale
-        
-        self.x += self.vx
-        self.y += self.vy
-        self.wrap()
+@nb.njit
+def frobenius_norm(a):
+    norms = np.empty(a.shape[0], dtype=a.dtype)
+    for i in nb.prange(a.shape[0]):
+        norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
+    return norms
 
-    def compute_movement(self, flock, cohesion, alignment, separation):
-        avg_pos = [0, 0]
-        avg_vel = [0, 0]
-        sep = [0, 0]
-        neighboring_boids = 0
+@nb.njit
+def update_numba(boids, classes):
+    for i in range(len(boids)):
+        # Calculate the angle between the current boid and the neighbor
+        angle_to_neighbor = np.arctan2(boids[:, 1] - boids[i, 1], boids[:, 0] - boids[i, 0])
+        # Calculate the angle difference between the current boid's velocity direction and the angle to the neighbor
+        angle_difference = np.abs(np.arctan2(boids[i, 3], boids[i, 2]) - angle_to_neighbor)
+        # 1 = 90 degrees
+        # 2 = 180 degrees
+        # 3 = 270 degrees
+        # 4 = 360 degrees
+        vision_angle = math.pi * 3
+        # Check if the neighbor is within the vision angle range
+        angle_mask = angle_difference <= vision_angle / 2
+        distances = frobenius_norm(boids[i, :2] - boids[:, :2])
 
-        for boid in flock:
-            if boid != self:
-                distance = math.dist((self.x, self.y), (boid.x, boid.y))
-                if distance < NEIGHBOR_RADIUS:
-                    avg_pos[0] += boid.x
-                    avg_pos[1] += boid.y
-                    avg_vel[0] += boid.vx
-                    avg_vel[1] += boid.vy
-                    if distance < SEPARATION_RADIUS:
-                        sep[0] += self.x - boid.x
-                        sep[1] += self.y - boid.y
-                    neighboring_boids += 1
+        for c in range(len(CLASSES)):
+            class_mask = classes == c
+            class_mask = np.stack((class_mask, class_mask), axis=1)
 
-        if neighboring_boids > 0:
-            avg_pos[0] /= neighboring_boids
-            avg_pos[1] /= neighboring_boids
-            avg_vel[0] /= neighboring_boids
-            avg_vel[1] /= neighboring_boids
-
-        avg_pos[0] -= self.x
-        avg_pos[1] -= self.y
-        avg_vel[0] -= self.vx
-        avg_vel[1] -= self.vy
-
-        dx = alignment * avg_vel[0] + cohesion * avg_pos[0] + separation * sep[0]
-        dy = alignment * avg_vel[1] + cohesion * avg_pos[1] + separation * sep[1]
-
-        return dx, dy
-
-    def wrap(self):
-        if BOUNCE_OF_EDGES:
-            if self.x < MARGIN['left']:
-                self.vx = self.vx + TRUN_FACTOR
-            if self.x > MARGIN['right']:
-                self.vx = self.vx - TRUN_FACTOR
-            if self.y > MARGIN['bottom']:
-                self.vy = self.vy - TRUN_FACTOR
-            if self.y < MARGIN['top']:
-                self.vy = self.vy + TRUN_FACTOR
-        else:
-            if self.x < 0:
-                self.x = WIDTH
-            elif self.x > WIDTH:
-                self.x = 0
-            if self.y < 0:
-                self.y = HEIGHT
-            elif self.y > HEIGHT:
-                self.y = 0
+            # Use makes to find neighbors
+            sep_mask = distances < SEPARATION_RADIUS[classes[i], c]
+            sep_mask = np.logical_and(sep_mask, angle_mask)
+            sep_mask = np.stack((sep_mask, sep_mask), axis=1)
+            viaible_mask = np.logical_and(SEPARATION_RADIUS[classes[i], c] <= distances, distances < VISIBLE_RADIUS[classes[i], c], angle_mask)
+            viaible_mask = np.stack((viaible_mask, viaible_mask), axis=1)
             
-def draw_boids(screen, flock):
-    for boid in flock:
-        angle = math.atan2(boid.vy, boid.vx)
-        p1 = (boid.x + BOID_LENGTH * math.cos(angle), boid.y + BOID_LENGTH * math.sin(angle))
-        p2 = (boid.x + BOID_LENGTH * math.cos(angle - 2.5), boid.y + BOID_LENGTH * math.sin(angle - 2.5))
-        p3 = (boid.x + BOID_LENGTH * math.cos(angle + 2.5), boid.y + BOID_LENGTH * math.sin(angle + 2.5))
-        pygame.draw.polygon(screen, BOID_COLOR, (p1, p2, p3))
+            num_neighbors = np.sum(viaible_mask*class_mask)/2
+
+            # Separation
+            boids[i, 2:] = boids[i, 2:] + np.sum((boids[i, :2] - boids[:, :2])*sep_mask*class_mask, axis=0) * SEPARATION_WEIGHT[classes[i], c]
+            
+            # Check if neighboring_boids>0
+            if num_neighbors > 0:
+                # Alignment
+                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, 2:])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, 2:]) * ALIGNMENT_WEIGHT[classes[i], c]
+
+                # Cohesion
+                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
+
+    # Turn around a screen edges
+    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TRUN_FACTOR
+    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TRUN_FACTOR
+    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TRUN_FACTOR
+    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TRUN_FACTOR
+
+    # Normalize speed
+    speed = np.sqrt(boids[:, 2]**2 + boids[:, 3]**2)[:, np.newaxis]
+    scale = MAX_SPEED / speed
+    boids[:, 2:] = boids[:, 2:] * scale
+
+    # Update
+    boids[:, :2] = boids[:, :2] + boids[:, 2:]
+
+def draw_boids(screen, flock, classes):
+    global BOID_LENGTH
+
+    for i, boid in enumerate(flock):
+        c = classes[i]
+
+        angle = math.atan2(boid[3], boid[2])
+        p1 = (boid[0] + BOID_LENGTH[c] * math.cos(angle), boid[1] + BOID_LENGTH[c] * math.sin(angle))
+        p2 = (boid[0] + BOID_LENGTH[c] * math.cos(angle - 2.5), boid[1] + BOID_LENGTH[c] * math.sin(angle - 2.5))
+        p3 = (boid[0] + BOID_LENGTH[c] * math.cos(angle + 2.5), boid[1] + BOID_LENGTH[c] * math.sin(angle + 2.5))
+        pygame.draw.polygon(screen, BOID_COLOR[c], (p1, p2, p3))
+
+def draw_dotted_margin(screen, width, height, dot_length=10, dot_spacing=5, color=(255, 255, 255), thickness=2):
+    global MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, MARGIN_BOTTOM
+
+    # Draw the margin lines
+    line_color = color
+    line_thickness = thickness
+
+    # Left margin
+    for y in range(0, height, dot_length + dot_spacing * 2):
+        pygame.draw.line(screen, line_color, (MARGIN_LEFT, y), (MARGIN_LEFT, min(y + dot_length, height)), line_thickness)
+    
+    # Right margin
+    for y in range(0, height, dot_length + dot_spacing * 2):
+        pygame.draw.line(screen, line_color, (MARGIN_RIGHT, y), (MARGIN_RIGHT, min(y + dot_length, height)), line_thickness)
+    
+    # Top margin
+    for x in range(0, width, dot_length + dot_spacing * 2):
+        pygame.draw.line(screen, line_color, (x, MARGIN_TOP), (min(x + dot_length, width), MARGIN_TOP), line_thickness)
+    
+    # Bottom margin
+    for x in range(0, width, dot_length + dot_spacing * 2):
+        pygame.draw.line(screen, line_color, (x, MARGIN_BOTTOM), (min(x + dot_length, width), MARGIN_BOTTOM), line_thickness)
 
 
 def pygame_sim():
@@ -118,49 +130,36 @@ def pygame_sim():
     pygame.display.set_caption("Boids Simulation")
     clock = pygame.time.Clock()
 
-    flock = [Boid(random.randint(0, WIDTH), random.randint(0, HEIGHT)) for _ in range(NUM_BOIDS)]
-
-    order_parameters = []
-    nearest_neighbor_distances = []
+    boids = np.array([np.random.uniform(0, WIDTH, size=NUM_BOIDS),  # x coordiante
+                  np.random.uniform(0, HEIGHT, size=NUM_BOIDS), # y coordiante
+                  np.random.uniform(-1, 1, size=NUM_BOIDS),     # xv velocity vector in x direction
+                  np.random.uniform(-1, 1, size=NUM_BOIDS),      # yv velocity vector in y direction
+                  ], dtype=np.float32).T  
+    
+    classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
 
     running = True
     while running:
         screen.fill(BACKGROUND_COLOR)
+        draw_dotted_margin(screen, WIDTH, HEIGHT)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
-        for boid in flock:
-            boid.update(flock, COHESION_WEIGHT, ALIGNMENT_WEIGHT, SEPARATION_WEIGHT)
+        # Running the update with namba gives some initial wait time, 
+        # becuase the functions has to be converted and chached, but is able to run large numbers of boids
+        update_numba(boids, classes)
 
-        draw_boids(screen, flock)
-
-        # Calculate order parameter
-        avg_velocity = np.array([np.array([boid.vx, boid.vy]) / math.sqrt(boid.vx**2 + boid.vy**2) if math.sqrt(boid.vx**2 + boid.vy**2) > 0 else [0, 0] for boid in flock])
-        
-        order_parameter = np.linalg.norm(np.sum(avg_velocity, axis=0)) / NUM_BOIDS
-        order_parameters.append(order_parameter)
-
-        # Calculate nearest neighbor distances
-        distances = []
-        for boid in flock:
-            distances.extend([math.dist((boid.x, boid.y), (other_boid.x, other_boid.y)) for other_boid in flock if boid != other_boid])
-        nearest_neighbor_distances.append(np.mean(distances))
+        draw_boids(screen, boids, classes)
 
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(30)
 
     pygame.quit()
 
-    return order_parameters, nearest_neighbor_distances
-
-
-def main(visualise=True):
-    
-    if visualise: 
-        order_parameters, nearest_neighbor_distances = pygame_sim()
 
 if __name__ == "__main__":
-    # Turning on visualise runs the simulation in pygame, turing it off runs the ABC algorithm
-    main(visualise=True)
+    pygame_sim()
+
+
