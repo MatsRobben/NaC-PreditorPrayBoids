@@ -19,6 +19,12 @@ COHESION_WEIGHT = np.array([[0.005, 0.005],
 SEPARATION_WEIGHT = np.array([[0.1, 0.9], 
                               [0.1, 0.1]])
 
+# adding timers per game tick
+TIME_WITHOUT_FOOD = 100
+TIME_TO_EAT_AGAIN = TIME_WITHOUT_FOOD / 5
+TIME_TO_RESPAWN = np.array([10, 200])
+DISTANCE_TO_EAT = 10
+
 TRUN_FACTOR = 0.2
 BOID_LENGTH = [10, 14]
 BACKGROUND_COLOR = (220, 220, 220)
@@ -35,8 +41,14 @@ def frobenius_norm(a):
     return norms
 
 @nb.njit
-def update_numba(boids, classes):
+def update_numba(boids, classes, timers):
+    deleteable_boids = [0]
+    resetTimers = [0]
+    resetTimers.pop()
+    deleteable_boids.pop()
     for i in range(len(boids)):
+        if timers[i] == 0:
+            deleteable_boids.append(i)
         # Calculate the angle between the current boid and the neighbor
         angle_to_neighbor = np.arctan2(boids[:, 1] - boids[i, 1], boids[:, 0] - boids[i, 0])
         # Calculate the angle difference between the current boid's velocity direction and the angle to the neighbor
@@ -74,6 +86,13 @@ def update_numba(boids, classes):
                 # Cohesion
                 boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
 
+                if classes[i] == 1:  # Class 0 checking for collisions with Class 1
+                    resetTimers.append(i)
+                    collision_mask = (classes == 0) & (distances < DISTANCE_TO_EAT)
+                    if np.any(collision_mask):
+                        deleteable_boids.append(np.where(collision_mask)[0][0])
+
+    without_duplicates = list(set(deleteable_boids))
     # Turn around a screen edges
     boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TRUN_FACTOR
     boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TRUN_FACTOR
@@ -87,6 +106,8 @@ def update_numba(boids, classes):
 
     # Update
     boids[:, :2] = boids[:, :2] + boids[:, 2:]
+
+    return without_duplicates, resetTimers
 
 def draw_boids(screen, flock, classes):
     global BOID_LENGTH
@@ -123,6 +144,21 @@ def draw_dotted_margin(screen, width, height, dot_length=10, dot_spacing=5, colo
     for x in range(0, width, dot_length + dot_spacing * 2):
         pygame.draw.line(screen, line_color, (x, MARGIN_BOTTOM), (min(x + dot_length, width), MARGIN_BOTTOM), line_thickness)
 
+def add_newboid(boid_type, boids, classes, timers):
+    new_row = np.array(
+        [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
+        dtype=np.float32)
+    new_row = new_row.reshape(1, -1)
+    boids = np.append(boids, new_row, axis=0)
+    classes = np.append(classes, boid_type)
+    if boid_type == 0:
+        timers = np.append(timers, -1)
+    else:
+        timers = np.append(timers, TIME_WITHOUT_FOOD)
+    return boids, classes, timers
+
+def remove_boid(boid, boids, classes, timers):
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid)
 
 def pygame_sim():
     pygame.init()
@@ -138,7 +174,10 @@ def pygame_sim():
     
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
 
+    timers = np.where(classes == 0, -1, TIME_WITHOUT_FOOD)
+
     running = True
+    gametic = 0
     while running:
         screen.fill(BACKGROUND_COLOR)
         draw_dotted_margin(screen, WIDTH, HEIGHT)
@@ -147,13 +186,27 @@ def pygame_sim():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Running the update with namba gives some initial wait time, 
+        # Periodically respawn both boid specicies
+        if gametic % TIME_TO_RESPAWN[0] == 0:
+            boids, classes, timers = add_newboid(0, boids, classes, timers)
+        if gametic % TIME_TO_RESPAWN[1] == 0:
+            boids, classes, timers = add_newboid(1, boids, classes, timers)
+
+        # Running the update with namba gives some initial wait time,
         # becuase the functions has to be converted and chached, but is able to run large numbers of boids
-        update_numba(boids, classes)
+        deleteableBoids, timerToReset = update_numba(boids, classes, timers)
+        for boid in timerToReset:
+            timers[boid] = TIME_WITHOUT_FOOD
+
+        boids, classes, timers = remove_boid(deleteableBoids, boids, classes, timers)
+
         draw_boids(screen, boids, classes)
 
         pygame.display.flip()
         clock.tick(30)
+        gametic += 1
+        timers -= 1
+        print("test")
 
     pygame.quit()
 
