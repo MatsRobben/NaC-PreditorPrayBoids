@@ -6,15 +6,15 @@ np.random.seed(0)
 
 WIDTH, HEIGHT = 800, 800
 
-CLASSES = np.array([200, 10])
+CLASSES = np.array([1, 1])
 NUM_BOIDS = np.sum(CLASSES)
 VISIBLE_RADIUS = np.array([[50, 50],
                           [50, 50]])
-SEPARATION_RADIUS = np.array([[10, 10],
-                             [10, 10]])
+SEPARATION_RADIUS = np.array([[10, 45],
+                             [10, 20]])
 ALIGNMENT_WEIGHT = np.array([[0.05, 0.05], 
                              [0.05, 0.05]])
-COHESION_WEIGHT = np.array([[0.005, 0], 
+COHESION_WEIGHT = np.array([[0.005, 0.005], 
                             [0.005, 0.005]])
 SEPARATION_WEIGHT = np.array([[0.1, 0.9], 
                               [0.1, 0.1]])
@@ -25,7 +25,7 @@ BACKGROUND_COLOR = (220, 220, 220)
 BOID_COLOR = [(0, 0, 0), (255, 0, 0)]
 
 MAX_SPEED = 3
-MARGIN_LEFT=100; MARGIN_RIGHT=WIDTH-100; MARGIN_TOP=100; MARGIN_BOTTOM=HEIGHT-100
+MARGIN_LEFT=200; MARGIN_RIGHT=WIDTH-200; MARGIN_TOP=200; MARGIN_BOTTOM=HEIGHT-200
 
 @nb.njit
 def frobenius_norm(a):
@@ -45,7 +45,7 @@ def update_numba(boids, classes):
         # 2 = 180 degrees
         # 3 = 270 degrees
         # 4 = 360 degrees
-        vision_angle = math.pi * 3
+        vision_angle = math.pi * 4
         # Check if the neighbor is within the vision angle range
         angle_mask = angle_difference <= vision_angle / 2
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
@@ -150,7 +150,6 @@ def pygame_sim():
         # Running the update with namba gives some initial wait time, 
         # becuase the functions has to be converted and chached, but is able to run large numbers of boids
         update_numba(boids, classes)
-
         draw_boids(screen, boids, classes)
 
         pygame.display.flip()
