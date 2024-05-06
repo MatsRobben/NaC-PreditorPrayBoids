@@ -30,7 +30,7 @@ BOID_LENGTH = [10, 14]
 BACKGROUND_COLOR = (220, 220, 220)
 BOID_COLOR = [(0, 0, 0), (255, 0, 0)]
 
-MAX_SPEED = 3
+MAX_SPEED = np.array([3, 5])
 MARGIN_LEFT=200; MARGIN_RIGHT=WIDTH-200; MARGIN_TOP=200; MARGIN_BOTTOM=HEIGHT-200
 
 @nb.njit
@@ -57,7 +57,7 @@ def update_numba(boids, classes, timers):
         # 2 = 180 degrees
         # 3 = 270 degrees
         # 4 = 360 degrees
-        vision_angle = math.pi * 4
+        vision_angle = math.pi * 3
         # Check if the neighbor is within the vision angle range
         angle_mask = angle_difference <= vision_angle / 2
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
@@ -101,7 +101,7 @@ def update_numba(boids, classes, timers):
 
     # Normalize speed
     speed = np.sqrt(boids[:, 2]**2 + boids[:, 3]**2)[:, np.newaxis]
-    scale = MAX_SPEED / speed
+    scale = MAX_SPEED[classes][:, np.newaxis] / speed
     boids[:, 2:] = boids[:, 2:] * scale
 
     # Update
@@ -206,7 +206,6 @@ def pygame_sim():
         clock.tick(30)
         gametic += 1
         timers -= 1
-        print("test")
 
     pygame.quit()
 
