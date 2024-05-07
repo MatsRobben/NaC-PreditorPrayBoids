@@ -13,7 +13,7 @@ VISIBLE_RADIUS = np.array([[50, 50],
 SEPARATION_RADIUS = np.array([[10, 45],
                              [10, 20]])
 ALIGNMENT_WEIGHT = np.array([[0.05, 0.05], 
-                             [0.05, 0.05]])
+                             [0.05, 0.1]])
 COHESION_WEIGHT = np.array([[0.005, 0.005], 
                             [0.005, 0.005]])
 SEPARATION_WEIGHT = np.array([[0.1, 0.9], 
@@ -39,6 +39,24 @@ def frobenius_norm(a):
     for i in nb.prange(a.shape[0]):
         norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
     return norms
+
+@nb.njit
+def add_newboid(boid_type, boids, classes, timers):
+    new_row = np.array(
+        [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
+        dtype=np.float32)
+    new_row = new_row.reshape(1, -1)
+    boids = np.append(boids, new_row, axis=0)
+    classes = np.append(classes, boid_type)
+    if boid_type == 0:
+        timers = np.append(timers, -1)
+    else:
+        timers = np.append(timers, TIME_WITHOUT_FOOD)
+    return boids, classes, timers
+
+# @nb.njit
+def remove_boid(boid, boids, classes, timers):
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid)
 
 @nb.njit
 def update_numba(boids, classes, timers):
@@ -143,22 +161,6 @@ def draw_dotted_margin(screen, width, height, dot_length=10, dot_spacing=5, colo
     # Bottom margin
     for x in range(0, width, dot_length + dot_spacing * 2):
         pygame.draw.line(screen, line_color, (x, MARGIN_BOTTOM), (min(x + dot_length, width), MARGIN_BOTTOM), line_thickness)
-
-def add_newboid(boid_type, boids, classes, timers):
-    new_row = np.array(
-        [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
-        dtype=np.float32)
-    new_row = new_row.reshape(1, -1)
-    boids = np.append(boids, new_row, axis=0)
-    classes = np.append(classes, boid_type)
-    if boid_type == 0:
-        timers = np.append(timers, -1)
-    else:
-        timers = np.append(timers, TIME_WITHOUT_FOOD)
-    return boids, classes, timers
-
-def remove_boid(boid, boids, classes, timers):
-    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid)
 
 def pygame_sim():
     pygame.init()
