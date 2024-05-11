@@ -67,6 +67,13 @@ def update_numba(boids, classes, timers):
     for i in range(len(boids)):
         if timers[i] == 0:
             deleteable_boids.append(i)
+
+        # Check if boid is close to a border
+        if boids[i, 0] < 0 or boids[i, 0] > WIDTH or boids[i, 1] < 0 or boids[i, 1] > HEIGHT:
+            # Reverse velocity direction -> make it turn around
+            boids[i, 2] *= -1
+            boids[i, 3] *= -1
+          
         # Calculate the angle between the current boid and the neighbor
         angle_to_neighbor = np.arctan2(boids[:, 1] - boids[i, 1], boids[:, 0] - boids[i, 0])
         # Calculate the angle difference between the current boid's velocity direction and the angle to the neighbor
