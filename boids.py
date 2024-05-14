@@ -20,7 +20,7 @@ SEPARATION_WEIGHT = np.array([[0.1, 0.9],
                               [0.1, 0.1]])
 
 # adding timers per game tick
-TIME_WITHOUT_FOOD = 100
+TIME_WITHOUT_FOOD = 400
 TIME_TO_EAT_AGAIN = TIME_WITHOUT_FOOD / 5
 TIME_TO_RESPAWN = np.array([10, 200])
 DISTANCE_TO_EAT = 10
@@ -73,7 +73,7 @@ def update_numba(boids, classes, timers):
             # Reverse velocity direction -> make it turn around
             boids[i, 2] *= -1
             boids[i, 3] *= -1
-          
+
         # Calculate the angle between the current boid and the neighbor
         angle_to_neighbor = np.arctan2(boids[:, 1] - boids[i, 1], boids[:, 0] - boids[i, 0])
         # Calculate the angle difference between the current boid's velocity direction and the angle to the neighbor
@@ -112,9 +112,9 @@ def update_numba(boids, classes, timers):
                 boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
 
                 if classes[i] == 1:  # Class 0 checking for collisions with Class 1
-                    resetTimers.append(i)
                     collision_mask = (classes == 0) & (distances < DISTANCE_TO_EAT)
                     if np.any(collision_mask):
+                        resetTimers.append(i)
                         deleteable_boids.append(np.where(collision_mask)[0][0])
 
     without_duplicates = list(set(deleteable_boids))
