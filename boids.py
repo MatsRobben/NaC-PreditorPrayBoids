@@ -20,6 +20,7 @@ SEPARATION_WEIGHT = np.array([[0.1, 0.9],
                               [0.1, 0.1]])
 
 # adding timers per game tick
+TIME_TO_DIE = np.array([500, 1600])
 TIME_WITHOUT_FOOD = 400
 TIME_TO_EAT_AGAIN = TIME_WITHOUT_FOOD / 5
 TIME_TO_RESPAWN = np.array([10, 200])
@@ -41,31 +42,32 @@ def frobenius_norm(a):
     return norms
 
 @nb.njit
-def add_newboid(boid_type, boids, classes, timers):
+def add_newboid(boid_type, boids, classes, timers, deathTimers):
     new_row = np.array(
         [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
         dtype=np.float32)
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, boid_type)
+    deathTimers = np.append(deathTimers, TIME_TO_DIE[boid_type])
     if boid_type == 0:
         timers = np.append(timers, -1)
     else:
         timers = np.append(timers, TIME_WITHOUT_FOOD)
-    return boids, classes, timers
+    return boids, classes, timers, deathTimers
 
 # @nb.njit
-def remove_boid(boid, boids, classes, timers):
-    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid)
+def remove_boid(boid, boids, classes, timers, deathTimers):
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid), np.delete(deathTimers, boid)
 
 @nb.njit
-def update_numba(boids, classes, timers):
+def update_numba(boids, classes, timers, deathtimers):
     deleteable_boids = [0]
     resetTimers = [0]
     resetTimers.pop()
     deleteable_boids.pop()
     for i in range(len(boids)):
-        if timers[i] == 0:
+        if timers[i] == 0 or deathtimers[i] == 0:
             deleteable_boids.append(i)
 
         # Check if boid is close to a border
@@ -184,6 +186,7 @@ def pygame_sim():
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
 
     timers = np.where(classes == 0, -1, TIME_WITHOUT_FOOD)
+    deathtimers = np.where(classes == 0, TIME_TO_DIE[0], TIME_TO_DIE[1])
 
     running = True
     gametic = 0
@@ -197,17 +200,17 @@ def pygame_sim():
 
         # Periodically respawn both boid specicies
         if gametic % TIME_TO_RESPAWN[0] == 0:
-            boids, classes, timers = add_newboid(0, boids, classes, timers)
+            boids, classes, timers, deathtimers = add_newboid(0, boids, classes, timers, deathtimers)
         if gametic % TIME_TO_RESPAWN[1] == 0:
-            boids, classes, timers = add_newboid(1, boids, classes, timers)
+            boids, classes, timers, deathtimers = add_newboid(1, boids, classes, timers, deathtimers)
 
         # Running the update with namba gives some initial wait time,
         # becuase the functions has to be converted and chached, but is able to run large numbers of boids
-        deleteableBoids, timerToReset = update_numba(boids, classes, timers)
+        deleteableBoids, timerToReset = update_numba(boids, classes, timers, deathtimers)
         for boid in timerToReset:
             timers[boid] = TIME_WITHOUT_FOOD
 
-        boids, classes, timers = remove_boid(deleteableBoids, boids, classes, timers)
+        boids, classes, timers, deathtimers = remove_boid(deleteableBoids, boids, classes, timers, deathtimers)
 
         draw_boids(screen, boids, classes)
 
@@ -215,6 +218,7 @@ def pygame_sim():
         clock.tick(30)
         gametic += 1
         timers -= 1
+        deathtimers -= 1
 
     pygame.quit()
 
