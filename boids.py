@@ -6,7 +6,7 @@ np.random.seed(0)
 
 WIDTH, HEIGHT = 800, 800
 
-CLASSES = np.array([1, 1])
+CLASSES = np.array([200, 1])
 NUM_BOIDS = np.sum(CLASSES)
 VISIBLE_RADIUS = np.array([[50, 50],
                           [50, 50]])
@@ -49,7 +49,7 @@ def add_newboid(boid_type, boids, classes, timers, deathTimers):
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, boid_type)
-    deathTimers = np.append(deathTimers, TIME_TO_DIE[boid_type])
+    deathTimers = np.append(deathTimers, TIME_TO_DIE[boid_type]+np.random.randint(1, 301, 1))
     if boid_type == 0:
         timers = np.append(timers, -1)
     else:
@@ -186,7 +186,8 @@ def pygame_sim():
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
 
     timers = np.where(classes == 0, -1, TIME_WITHOUT_FOOD)
-    deathtimers = np.where(classes == 0, TIME_TO_DIE[0], TIME_TO_DIE[1])
+    random_factors = np.random.randint(1, 301, size=classes.shape)
+    deathtimers = np.where(classes == 0, TIME_TO_DIE[0] + random_factors, TIME_TO_DIE[1] + random_factors)
 
     running = True
     gametic = 0
