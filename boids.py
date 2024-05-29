@@ -6,7 +6,7 @@ np.random.seed(0)
 
 WIDTH, HEIGHT = 800, 800
 
-CLASSES = np.array([200, 1])
+CLASSES = np.array([200, 10])
 NUM_BOIDS = np.sum(CLASSES)
 VISIBLE_RADIUS = np.array([[50, 50],
                           [50, 50]])
@@ -20,10 +20,10 @@ SEPARATION_WEIGHT = np.array([[0.1, 0.9],
                               [0.1, 0.1]])
 
 # adding timers per game tick
-TIME_TO_DIE = np.array([500, 1600])
+TIME_TO_DIE = np.array([300, 1200])
 TIME_WITHOUT_FOOD = 400
 TIME_TO_EAT_AGAIN = TIME_WITHOUT_FOOD / 5
-TIME_TO_RESPAWN = np.array([10, 200])
+TIME_TO_RESPAWN = np.array([200, 800])
 DISTANCE_TO_EAT = 10
 
 TRUN_FACTOR = 0.2
@@ -57,15 +57,16 @@ def add_newboid(boid_type, boids, classes, timers, deathTimers):
     return boids, classes, timers, deathTimers
 
 # @nb.njit
-def remove_boid(boid, boids, classes, timers, deathTimers):
-    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid), np.delete(deathTimers, boid)
+def remove_boid(boid, boids, classes, timers, deathTimers, random_factors):
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid), np.delete(deathTimers, boid), np.delete(random_factors, boid)
 
 @nb.njit
-def update_numba(boids, classes, timers, deathtimers):
+def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
     deleteable_boids = [0]
     resetTimers = [0]
     resetTimers.pop()
     deleteable_boids.pop()
+    parents = None
     for i in range(len(boids)):
         if timers[i] == 0 or deathtimers[i] == 0:
             deleteable_boids.append(i)
@@ -91,6 +92,16 @@ def update_numba(boids, classes, timers, deathtimers):
 
         for c in range(len(CLASSES)):
             class_mask = classes == c
+            gametic = gametic % max(random_factors)
+            birth_mask = random_factors == gametic
+            if c == 1:
+                birth_mask = birth_mask * (timers >300)
+            if parents is None:
+                parents = class_mask * birth_mask
+            else:
+                extra_parents = class_mask * birth_mask
+                parents = np.logical_or(parents, extra_parents)
+
             class_mask = np.stack((class_mask, class_mask), axis=1)
 
             # Use makes to find neighbors
@@ -134,7 +145,7 @@ def update_numba(boids, classes, timers, deathtimers):
     # Update
     boids[:, :2] = boids[:, :2] + boids[:, 2:]
 
-    return without_duplicates, resetTimers
+    return without_duplicates, resetTimers, parents
 
 def draw_boids(screen, flock, classes):
     global BOID_LENGTH
@@ -191,6 +202,11 @@ def pygame_sim():
 
     running = True
     gametic = 0
+
+    #call both functions once to speed up the thing
+    boids, classes, timers, deathtimers = add_newboid(0, boids, classes, timers, deathtimers)
+    random_factors = np.append(random_factors, np.random.randint(1, 301, 1))
+    boids, classes, timers, deathtimers, random_factors = remove_boid([len(classes)-1], boids, classes, timers, deathtimers, random_factors)
     while running:
         screen.fill(BACKGROUND_COLOR)
         draw_dotted_margin(screen, WIDTH, HEIGHT)
@@ -200,18 +216,25 @@ def pygame_sim():
                 running = False
 
         # Periodically respawn both boid specicies
-        if gametic % TIME_TO_RESPAWN[0] == 0:
-            boids, classes, timers, deathtimers = add_newboid(0, boids, classes, timers, deathtimers)
-        if gametic % TIME_TO_RESPAWN[1] == 0:
-            boids, classes, timers, deathtimers = add_newboid(1, boids, classes, timers, deathtimers)
+        # if gametic % TIME_TO_RESPAWN[0] == 0:
+        #     boids, classes, timers, deathtimers = add_newboid(0, boids, classes, timers, deathtimers)
+        # if gametic % TIME_TO_RESPAWN[1] == 0:
+        #     boids, classes, timers, deathtimers = add_newboid(1, boids, classes, timers, deathtimers)
 
         # Running the update with namba gives some initial wait time,
         # becuase the functions has to be converted and chached, but is able to run large numbers of boids
-        deleteableBoids, timerToReset = update_numba(boids, classes, timers, deathtimers)
+        deleteableBoids, timerToReset, parents = update_numba(boids, classes, timers, deathtimers, random_factors, gametic)
         for boid in timerToReset:
             timers[boid] = TIME_WITHOUT_FOOD
 
-        boids, classes, timers, deathtimers = remove_boid(deleteableBoids, boids, classes, timers, deathtimers)
+        if parents is not None:
+            if len(parents) != 0:
+                for idx, p in enumerate(parents):
+                    if p:
+                        boids, classes, timers, deathtimers = add_newboid(classes[idx], boids, classes, timers, deathtimers)
+                        random_factors = np.append(random_factors, np.random.randint(1, 101, 1))
+
+        boids, classes, timers, deathtimers, random_factors = remove_boid(deleteableBoids, boids, classes, timers, deathtimers, random_factors)
 
         draw_boids(screen, boids, classes)
 
