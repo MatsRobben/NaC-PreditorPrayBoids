@@ -6,7 +6,7 @@ np.random.seed(0)
 
 WIDTH, HEIGHT = 800, 800
 
-CLASSES = np.array([200, 10])
+CLASSES = np.array([100, 10])
 NUM_BOIDS = np.sum(CLASSES)
 VISIBLE_RADIUS = np.array([[50, 50],
                           [50, 50]])
@@ -20,7 +20,7 @@ SEPARATION_WEIGHT = np.array([[0.1, 0.9],
                               [0.1, 0.1]])
 
 # adding timers per game tick
-TIME_TO_DIE = np.array([300, 1200])
+TIME_TO_DIE = np.array([300, 300])
 TIME_WITHOUT_FOOD = 400
 TIME_TO_EAT_AGAIN = TIME_WITHOUT_FOOD / 5
 TIME_TO_RESPAWN = np.array([200, 800])
@@ -61,47 +61,70 @@ def remove_boid(boid, boids, classes, timers, deathTimers, random_factors):
     return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid), np.delete(deathTimers, boid), np.delete(random_factors, boid)
 
 @nb.njit
+def check_collisions(current_boid, classes, distances, resetTimers, deleteable_boids):
+    if classes[current_boid] == 1:  # Class 0 checking for collisions with Class 1
+            collision_mask = (classes == 0) & (distances < DISTANCE_TO_EAT)
+            if np.any(collision_mask):
+                resetTimers.append(current_boid)
+                deleteable_boids.append(np.where(collision_mask)[0][0])
+
+@nb.njit
+def create_angle_mask(boids, current_boid, angle=3):
+    # Calculate the angle between the current boid and the neighbor
+    angle_to_neighbor = np.arctan2(boids[:, 1] - boids[current_boid, 1], boids[:, 0] - boids[current_boid, 0])
+    # Calculate the angle difference between the current boid's velocity direction and the angle to the neighbor
+    angle_difference = np.abs(np.arctan2(boids[current_boid, 3], boids[current_boid, 2]) - angle_to_neighbor)
+    # 1 = 90 degrees
+    # 2 = 180 degrees
+    # 3 = 270 degrees
+    # 4 = 360 degrees
+    vision_angle = math.pi * angle
+    # Check if the neighbor is within the vision angle range
+    return angle_difference <= vision_angle / 2
+
+@nb.njit
+def turn_at_egdes(boids):
+    # Turn around a screen edges
+    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TRUN_FACTOR
+    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TRUN_FACTOR
+    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TRUN_FACTOR
+    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TRUN_FACTOR
+
+    mask = np.logical_or(np.logical_or(np.logical_or(boids[:, 0] < 0, boids[:, 0] > WIDTH), boids[:, 1] < 0), boids[:, 1] > HEIGHT)
+    boids[:, 2] = boids[:, 2] * np.logical_not(mask) - boids[:, 2] * mask
+    boids[:, 3] = boids[:, 3] * np.logical_not(mask) - boids[:, 3] * mask
+
+@nb.njit
+def get_perents(classes, random_factors, timers, gametic):
+    parents = None
+    for c in range(len(CLASSES)):
+        class_mask = classes == c
+        birth_mask = random_factors == (gametic % max(random_factors))
+        if c == 1:
+            birth_mask = birth_mask * (timers >300)
+        if parents is None:
+            parents = class_mask * birth_mask
+        else:
+            extra_parents = class_mask * birth_mask
+            parents = np.logical_or(parents, extra_parents)
+    return parents
+
+@nb.njit
 def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
     deleteable_boids = [0]
     resetTimers = [0]
     resetTimers.pop()
     deleteable_boids.pop()
-    parents = None
+
     for i in range(len(boids)):
         if timers[i] == 0 or deathtimers[i] == 0:
             deleteable_boids.append(i)
 
-        # Check if boid is close to a border
-        if boids[i, 0] < 0 or boids[i, 0] > WIDTH or boids[i, 1] < 0 or boids[i, 1] > HEIGHT:
-            # Reverse velocity direction -> make it turn around
-            boids[i, 2] *= -1
-            boids[i, 3] *= -1
-
-        # Calculate the angle between the current boid and the neighbor
-        angle_to_neighbor = np.arctan2(boids[:, 1] - boids[i, 1], boids[:, 0] - boids[i, 0])
-        # Calculate the angle difference between the current boid's velocity direction and the angle to the neighbor
-        angle_difference = np.abs(np.arctan2(boids[i, 3], boids[i, 2]) - angle_to_neighbor)
-        # 1 = 90 degrees
-        # 2 = 180 degrees
-        # 3 = 270 degrees
-        # 4 = 360 degrees
-        vision_angle = math.pi * 3
-        # Check if the neighbor is within the vision angle range
-        angle_mask = angle_difference <= vision_angle / 2
+        angle_mask = create_angle_mask(boids, i, angle=3)
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
 
         for c in range(len(CLASSES)):
             class_mask = classes == c
-            gametic = gametic % max(random_factors)
-            birth_mask = random_factors == gametic
-            if c == 1:
-                birth_mask = birth_mask * (timers >300)
-            if parents is None:
-                parents = class_mask * birth_mask
-            else:
-                extra_parents = class_mask * birth_mask
-                parents = np.logical_or(parents, extra_parents)
-
             class_mask = np.stack((class_mask, class_mask), axis=1)
 
             # Use makes to find neighbors
@@ -124,18 +147,11 @@ def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
                 # Cohesion
                 boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
 
-                if classes[i] == 1:  # Class 0 checking for collisions with Class 1
-                    collision_mask = (classes == 0) & (distances < DISTANCE_TO_EAT)
-                    if np.any(collision_mask):
-                        resetTimers.append(i)
-                        deleteable_boids.append(np.where(collision_mask)[0][0])
+        check_collisions(i, classes, distances, resetTimers, deleteable_boids)
 
     without_duplicates = list(set(deleteable_boids))
-    # Turn around a screen edges
-    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TRUN_FACTOR
-    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TRUN_FACTOR
-    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TRUN_FACTOR
-    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TRUN_FACTOR
+
+    turn_at_egdes(boids)
 
     # Normalize speed
     speed = np.sqrt(boids[:, 2]**2 + boids[:, 3]**2)[:, np.newaxis]
@@ -144,6 +160,8 @@ def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
 
     # Update
     boids[:, :2] = boids[:, :2] + boids[:, 2:]
+
+    parents = get_perents(classes, random_factors, timers, gametic)
 
     return without_duplicates, resetTimers, parents
 
@@ -215,14 +233,7 @@ def pygame_sim():
             if event.type == pygame.QUIT:
                 running = False
 
-        # Periodically respawn both boid specicies
-        # if gametic % TIME_TO_RESPAWN[0] == 0:
-        #     boids, classes, timers, deathtimers = add_newboid(0, boids, classes, timers, deathtimers)
-        # if gametic % TIME_TO_RESPAWN[1] == 0:
-        #     boids, classes, timers, deathtimers = add_newboid(1, boids, classes, timers, deathtimers)
-
-        # Running the update with namba gives some initial wait time,
-        # becuase the functions has to be converted and chached, but is able to run large numbers of boids
+           
         deleteableBoids, timerToReset, parents = update_numba(boids, classes, timers, deathtimers, random_factors, gametic)
         for boid in timerToReset:
             timers[boid] = TIME_WITHOUT_FOOD
