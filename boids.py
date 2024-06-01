@@ -40,8 +40,7 @@ def frobenius_norm(a):
         norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
     return norms
 
-@nb.njit
-def add_newboid(boid_type, boids, classes, energies):
+def add_newboid(boid_type, boids, classes, energies, params=None):
     new_row = np.array(
         [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
         dtype=np.float32)
@@ -49,11 +48,17 @@ def add_newboid(boid_type, boids, classes, energies):
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, boid_type)
     energies = np.append(energies, MAX_ENERGY[boid_type])
+    if params is not None:
+        boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
+        new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
+        params = np.append(params, new_params, axis=0)
 
-    return boids, classes, energies
-# @nb.njit
-def remove_boid(boid, boids, classes, energies, random_factors):
-    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(energies, boid), np.delete(random_factors, boid)
+    return boids, classes, energies, params
+
+def remove_boid(boid, boids, classes, energies, random_factors, params=None):
+    if params is not None:
+        params = np.delete(params, boid, axis=0) 
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(energies, boid), np.delete(random_factors, boid), params
 
 @nb.njit
 def check_collisions(current_boid, classes, distances, resetEnergie, deleteable_boids):
@@ -227,8 +232,9 @@ def pygame_sim():
                   np.random.uniform(-1, 1, size=NUM_BOIDS),      # yv velocity vector in y direction
                   ], dtype=np.float32).T  
     
+    # params = None # To use global params
     # params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) # Initolize params randomly
-    params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) # Should be exactly the same as global params
+    params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) 
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
     energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
 
@@ -247,7 +253,7 @@ def pygame_sim():
             if event.type == pygame.QUIT:
                 running = False
 
-        deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params) # Works normal if params=None
+        deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params)
         for boid in energiesToReset:
             energies[boid] = MAX_ENERGY[classes[boid]]
 
@@ -255,10 +261,10 @@ def pygame_sim():
             if len(parents) != 0:
                 for idx, p in enumerate(parents):
                     if p:
-                        boids, classes, energies = add_newboid(classes[idx], boids, classes, energies)
+                        boids, classes, energies, params = add_newboid(classes[idx], boids, classes, energies, params=params)
                         random_factors = np.append(random_factors, np.random.randint(1, 301, 1))
 
-        boids, classes, energies, random_factors = remove_boid(deleteableBoids, boids, classes, energies, random_factors)
+        boids, classes, energies, random_factors, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, params=params)
 
         draw_boids(screen, boids, classes)
 
@@ -294,6 +300,6 @@ def plot_boid_counts(boid_counts, num_classes):
 
 if __name__ == "__main__":
     boid_counts = pygame_sim()
-    # plot_boid_counts(boid_counts, len(CLASSES))
+    plot_boid_counts(boid_counts, len(CLASSES))
 
 
