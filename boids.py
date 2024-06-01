@@ -105,7 +105,7 @@ def get_perents(classes, random_factors, energies, gametic):
     return parents
 
 @nb.njit
-def update_numba(boids, classes, energies, random_factors, gametic):
+def update_numba(boids, classes, energies, random_factors, gametic, params=None):
     deleteable_boids = [0]
     resetEnergie = [0]
     deleteable_boids.pop()
@@ -115,6 +115,16 @@ def update_numba(boids, classes, energies, random_factors, gametic):
         if energies[i] <= 0:
             deleteable_boids.append(i)
             continue
+        
+        # should do the same thing but does not
+        if params is None:
+            separation_weight = SEPARATION_WEIGHT[classes[i]]
+            alignment_weight = ALIGNMENT_WEIGHT[classes[i]]
+            cohesion_weight = COHESION_WEIGHT[classes[i]]
+        else:
+            separation_weight = params[i, 0, :]
+            alignment_weight = params[i, 1, :]
+            cohesion_weight = params[i, 2, :]
 
         angle_mask = create_angle_mask(boids, i, angle=3)
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
@@ -133,15 +143,15 @@ def update_numba(boids, classes, energies, random_factors, gametic):
             num_neighbors = np.sum(visible_mask*class_mask)/2
 
             # Separation
-            boids[i, 2:] = boids[i, 2:] + np.sum((boids[i, :2] - boids[:, :2])*sep_mask*class_mask, axis=0) * SEPARATION_WEIGHT[classes[i], c]
+            boids[i, 2:] = boids[i, 2:] + np.sum((boids[i, :2] - boids[:, :2])*sep_mask*class_mask, axis=0) * separation_weight[c]
             
             # Check if neighboring_boids>0
             if num_neighbors > 0:
                 # Alignment
-                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, 2:])*visible_mask*class_mask, axis=0) / num_neighbors - boids[i, 2:]) * ALIGNMENT_WEIGHT[classes[i], c]
+                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, 2:])*visible_mask*class_mask, axis=0) / num_neighbors - boids[i, 2:]) * alignment_weight[c]
 
                 # Cohesion
-                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*visible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
+                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*visible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * cohesion_weight[c]
 
         check_collisions(i, classes, distances, resetEnergie, deleteable_boids)
 
@@ -196,6 +206,15 @@ def draw_dotted_margin(screen, width, height, dot_length=10, dot_spacing=5, colo
     for x in range(0, width, dot_length + dot_spacing * 2):
         pygame.draw.line(screen, line_color, (x, MARGIN_BOTTOM), (min(x + dot_length, width), MARGIN_BOTTOM), line_thickness)
 
+# Function to create the combined weight array
+def create_params_array(classes, separation_weight, alignment_weight, cohesion_weight):
+    separation_result = np.vstack([separation_weight[i] for i, count in enumerate(classes) for _ in range(count)])
+    alignment_result = np.vstack([alignment_weight[i] for i, count in enumerate(classes) for _ in range(count)])
+    cohesion_result = np.vstack([cohesion_weight[i] for i, count in enumerate(classes) for _ in range(count)])
+    
+    combined_result = np.stack((separation_result, alignment_result, cohesion_result), axis=1)
+    return combined_result
+
 def pygame_sim():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -208,6 +227,8 @@ def pygame_sim():
                   np.random.uniform(-1, 1, size=NUM_BOIDS),      # yv velocity vector in y direction
                   ], dtype=np.float32).T  
     
+    # params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) # Initolize params randomly
+    params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) # Should be exactly the same as global params
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
     energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
 
@@ -226,7 +247,7 @@ def pygame_sim():
             if event.type == pygame.QUIT:
                 running = False
 
-        deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic)
+        deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params) # Works normal if params=None
         for boid in energiesToReset:
             energies[boid] = MAX_ENERGY[classes[boid]]
 
@@ -273,6 +294,6 @@ def plot_boid_counts(boid_counts, num_classes):
 
 if __name__ == "__main__":
     boid_counts = pygame_sim()
-    plot_boid_counts(boid_counts, len(CLASSES))
+    # plot_boid_counts(boid_counts, len(CLASSES))
 
 
