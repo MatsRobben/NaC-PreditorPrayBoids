@@ -1,7 +1,9 @@
 import numba as nb
 import numpy as np
 import pygame
+import matplotlib.pyplot as plt
 import math
+import os
 np.random.seed(0)
 
 WIDTH, HEIGHT = 800, 800
@@ -214,7 +216,9 @@ def pygame_sim():
     running = True
     gametic = 0
 
-    while running:
+    boid_counts = []
+
+    while running and len(boids) != 0:
         screen.fill(BACKGROUND_COLOR)
         draw_dotted_margin(screen, WIDTH, HEIGHT)
 
@@ -237,6 +241,10 @@ def pygame_sim():
 
         draw_boids(screen, boids, classes)
 
+        # Count the number of boids per class
+        counts = [np.sum(classes == i) for i in range(len(CLASSES))]
+        boid_counts.append(counts)
+
         pygame.display.flip()
         clock.tick(30)
         gametic += 1
@@ -244,7 +252,27 @@ def pygame_sim():
 
     pygame.quit()
 
+    return boid_counts
+
+def plot_boid_counts(boid_counts, num_classes):
+    class_names = ['Prey', 'Predator']
+
+    if not os.path.exists("figures"):
+        os.makedirs("figures")
+
+    for class_idx in range(num_classes):
+        class_counts = [counts[class_idx] for counts in boid_counts]
+        plt.plot(class_counts, label=f'{class_names[class_idx]}')
+    
+    plt.xlabel('Iteration')
+    plt.ylabel('Number of Boids')
+    plt.title('Number of Boids per Class Over Time')
+    plt.legend()
+    plt.savefig('figures/boid_counts.png')
+    plt.close()
+
 if __name__ == "__main__":
-    pygame_sim()
+    boid_counts = pygame_sim()
+    plot_boid_counts(boid_counts, len(CLASSES))
 
 
