@@ -20,10 +20,7 @@ SEPARATION_WEIGHT = np.array([[0.1, 0.9],
                               [0.1, 0.1]])
 
 # adding timers per game tick
-TIME_TO_DIE = np.array([300, 300])
-TIME_WITHOUT_FOOD = 400
-TIME_TO_EAT_AGAIN = TIME_WITHOUT_FOOD / 5
-TIME_TO_RESPAWN = np.array([200, 800])
+MAX_ENERGY = np.array([300, 400])
 DISTANCE_TO_EAT = 10
 
 TRUN_FACTOR = 0.2
@@ -42,30 +39,26 @@ def frobenius_norm(a):
     return norms
 
 @nb.njit
-def add_newboid(boid_type, boids, classes, timers, deathTimers):
+def add_newboid(boid_type, boids, classes, energies):
     new_row = np.array(
         [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
         dtype=np.float32)
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, boid_type)
-    deathTimers = np.append(deathTimers, TIME_TO_DIE[boid_type]+np.random.randint(1, 301, 1))
-    if boid_type == 0:
-        timers = np.append(timers, -1)
-    else:
-        timers = np.append(timers, TIME_WITHOUT_FOOD)
-    return boids, classes, timers, deathTimers
+    energies = np.append(energies, MAX_ENERGY[boid_type])
 
+    return boids, classes, energies
 # @nb.njit
-def remove_boid(boid, boids, classes, timers, deathTimers, random_factors):
-    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(timers, boid), np.delete(deathTimers, boid), np.delete(random_factors, boid)
+def remove_boid(boid, boids, classes, energies, random_factors):
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(energies, boid), np.delete(random_factors, boid)
 
 @nb.njit
-def check_collisions(current_boid, classes, distances, resetTimers, deleteable_boids):
+def check_collisions(current_boid, classes, distances, resetEnergie, deleteable_boids):
     if classes[current_boid] == 1:  # Class 0 checking for collisions with Class 1
             collision_mask = (classes == 0) & (distances < DISTANCE_TO_EAT)
             if np.any(collision_mask):
-                resetTimers.append(current_boid)
+                resetEnergie.append(current_boid)
                 deleteable_boids.append(np.where(collision_mask)[0][0])
 
 @nb.njit
@@ -95,13 +88,13 @@ def turn_at_egdes(boids):
     boids[:, 3] = boids[:, 3] * np.logical_not(mask) - boids[:, 3] * mask
 
 @nb.njit
-def get_perents(classes, random_factors, timers, gametic):
+def get_perents(classes, random_factors, energies, gametic):
     parents = None
     for c in range(len(CLASSES)):
         class_mask = classes == c
         birth_mask = random_factors == (gametic % max(random_factors))
         if c == 1:
-            birth_mask = birth_mask * (timers >300)
+            birth_mask = birth_mask * (energies > 300)
         if parents is None:
             parents = class_mask * birth_mask
         else:
@@ -110,15 +103,16 @@ def get_perents(classes, random_factors, timers, gametic):
     return parents
 
 @nb.njit
-def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
+def update_numba(boids, classes, energies, random_factors, gametic):
     deleteable_boids = [0]
-    resetTimers = [0]
-    resetTimers.pop()
+    resetEnergie = [0]
     deleteable_boids.pop()
+    resetEnergie.pop()
 
     for i in range(len(boids)):
-        if timers[i] == 0 or deathtimers[i] == 0:
+        if energies[i] <= 0:
             deleteable_boids.append(i)
+            continue
 
         angle_mask = create_angle_mask(boids, i, angle=3)
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
@@ -131,10 +125,10 @@ def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
             sep_mask = distances < SEPARATION_RADIUS[classes[i], c]
             sep_mask = np.logical_and(sep_mask, angle_mask)
             sep_mask = np.stack((sep_mask, sep_mask), axis=1)
-            viaible_mask = np.logical_and(SEPARATION_RADIUS[classes[i], c] <= distances, distances < VISIBLE_RADIUS[classes[i], c], angle_mask)
-            viaible_mask = np.stack((viaible_mask, viaible_mask), axis=1)
+            visible_mask = np.logical_and(SEPARATION_RADIUS[classes[i], c] <= distances, distances < VISIBLE_RADIUS[classes[i], c], angle_mask)
+            visible_mask = np.stack((visible_mask, visible_mask), axis=1)
             
-            num_neighbors = np.sum(viaible_mask*class_mask)/2
+            num_neighbors = np.sum(visible_mask*class_mask)/2
 
             # Separation
             boids[i, 2:] = boids[i, 2:] + np.sum((boids[i, :2] - boids[:, :2])*sep_mask*class_mask, axis=0) * SEPARATION_WEIGHT[classes[i], c]
@@ -142,12 +136,12 @@ def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
             # Check if neighboring_boids>0
             if num_neighbors > 0:
                 # Alignment
-                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, 2:])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, 2:]) * ALIGNMENT_WEIGHT[classes[i], c]
+                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, 2:])*visible_mask*class_mask, axis=0) / num_neighbors - boids[i, 2:]) * ALIGNMENT_WEIGHT[classes[i], c]
 
                 # Cohesion
-                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*viaible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
+                boids[i, 2:] = boids[i, 2:] + (np.sum((boids[:, :2])*visible_mask*class_mask, axis=0) / num_neighbors - boids[i, :2]) * COHESION_WEIGHT[classes[i], c]
 
-        check_collisions(i, classes, distances, resetTimers, deleteable_boids)
+        check_collisions(i, classes, distances, resetEnergie, deleteable_boids)
 
     without_duplicates = list(set(deleteable_boids))
 
@@ -161,9 +155,9 @@ def update_numba(boids, classes, timers, deathtimers, random_factors, gametic):
     # Update
     boids[:, :2] = boids[:, :2] + boids[:, 2:]
 
-    parents = get_perents(classes, random_factors, timers, gametic)
+    parents = get_perents(classes, random_factors, energies, gametic)
 
-    return without_duplicates, resetTimers, parents
+    return without_duplicates, resetEnergie, parents
 
 def draw_boids(screen, flock, classes):
     global BOID_LENGTH
@@ -213,18 +207,13 @@ def pygame_sim():
                   ], dtype=np.float32).T  
     
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
+    energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
 
-    timers = np.where(classes == 0, -1, TIME_WITHOUT_FOOD)
     random_factors = np.random.randint(1, 301, size=classes.shape)
-    deathtimers = np.where(classes == 0, TIME_TO_DIE[0] + random_factors, TIME_TO_DIE[1] + random_factors)
 
     running = True
     gametic = 0
 
-    #call both functions once to speed up the thing
-    boids, classes, timers, deathtimers = add_newboid(0, boids, classes, timers, deathtimers)
-    random_factors = np.append(random_factors, np.random.randint(1, 301, 1))
-    boids, classes, timers, deathtimers, random_factors = remove_boid([len(classes)-1], boids, classes, timers, deathtimers, random_factors)
     while running:
         screen.fill(BACKGROUND_COLOR)
         draw_dotted_margin(screen, WIDTH, HEIGHT)
@@ -233,30 +222,27 @@ def pygame_sim():
             if event.type == pygame.QUIT:
                 running = False
 
-           
-        deleteableBoids, timerToReset, parents = update_numba(boids, classes, timers, deathtimers, random_factors, gametic)
-        for boid in timerToReset:
-            timers[boid] = TIME_WITHOUT_FOOD
+        deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic)
+        for boid in energiesToReset:
+            energies[boid] = MAX_ENERGY[classes[boid]]
 
         if parents is not None:
             if len(parents) != 0:
                 for idx, p in enumerate(parents):
                     if p:
-                        boids, classes, timers, deathtimers = add_newboid(classes[idx], boids, classes, timers, deathtimers)
-                        random_factors = np.append(random_factors, np.random.randint(1, 101, 1))
+                        boids, classes, energies = add_newboid(classes[idx], boids, classes, energies)
+                        random_factors = np.append(random_factors, np.random.randint(1, 301, 1))
 
-        boids, classes, timers, deathtimers, random_factors = remove_boid(deleteableBoids, boids, classes, timers, deathtimers, random_factors)
+        boids, classes, energies, random_factors = remove_boid(deleteableBoids, boids, classes, energies, random_factors)
 
         draw_boids(screen, boids, classes)
 
         pygame.display.flip()
         clock.tick(30)
         gametic += 1
-        timers -= 1
-        deathtimers -= 1
+        energies -= 1
 
     pygame.quit()
-
 
 if __name__ == "__main__":
     pygame_sim()
