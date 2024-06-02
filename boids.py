@@ -4,7 +4,7 @@ import pygame
 import matplotlib.pyplot as plt
 import math
 import os
-np.random.seed(0)
+np.random.seed(None)
 
 WIDTH, HEIGHT = 800, 800
 
@@ -23,6 +23,8 @@ SEPARATION_WEIGHT = np.array([[0.1, 0.9],
 
 # adding timers per game tick
 MAX_ENERGY = np.array([300, 400])
+ENERGY_TO_REPRODUCE = 300
+REPRODUCE_CYCLE = 200
 DISTANCE_TO_EAT = 10
 
 TRUN_FACTOR = 0.2
@@ -40,18 +42,24 @@ def frobenius_norm(a):
         norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
     return norms
 
-def add_newboid(boid_type, boids, classes, energies, params=None):
+def add_newboid(parent, boids, classes, energies, params=None):
     new_row = np.array(
         [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
         dtype=np.float32)
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
-    classes = np.append(classes, boid_type)
-    energies = np.append(energies, MAX_ENERGY[boid_type])
+    classes = np.append(classes, classes[parent])
+    energies = np.append(energies, MAX_ENERGY[classes[parent]])
     if params is not None:
-        boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
-        new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
-        params = np.append(params, new_params, axis=0)
+        # Recreate global params, for testing
+        # boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
+        # new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
+        # Compleatly random
+        # new_params = np.random.uniform(0, 1, size=(1, 3, len(CLASSES)))
+        # Mutation
+        parent_params = params[parent]
+        new_params = np.random.normal(loc=parent_params, scale=0.1, size=parent_params.shape)
+        params = np.append(params, new_params[None, ...], axis=0)
 
     return boids, classes, energies, params
 
@@ -101,13 +109,13 @@ def get_perents(classes, random_factors, energies, gametic):
         class_mask = classes == c
         birth_mask = random_factors == (gametic % max(random_factors))
         if c == 1:
-            birth_mask = birth_mask * (energies > 300)
+            birth_mask = birth_mask * (energies > ENERGY_TO_REPRODUCE)
         if parents is None:
             parents = class_mask * birth_mask
         else:
             extra_parents = class_mask * birth_mask
             parents = np.logical_or(parents, extra_parents)
-    return parents
+    return np.nonzero(parents)[0]
 
 @nb.njit
 def update_numba(boids, classes, energies, random_factors, gametic, params=None):
@@ -232,13 +240,17 @@ def pygame_sim():
                   np.random.uniform(-1, 1, size=NUM_BOIDS),      # yv velocity vector in y direction
                   ], dtype=np.float32).T  
     
-    # params = None # To use global params
-    # params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) # Initolize params randomly
-    params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) 
+    # To use global params
+    # params = None 
+    # To test if local params work the same as global
+    # params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) 
+    # Initolize params randomly
+    params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) 
+
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
     energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
 
-    random_factors = np.random.randint(1, 301, size=classes.shape)
+    random_factors = np.random.randint(1, REPRODUCE_CYCLE, size=classes.shape)
 
     running = True
     gametic = 0
@@ -256,13 +268,11 @@ def pygame_sim():
         deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params)
         for boid in energiesToReset:
             energies[boid] = MAX_ENERGY[classes[boid]]
-
-        if parents is not None:
-            if len(parents) != 0:
-                for idx, p in enumerate(parents):
-                    if p:
-                        boids, classes, energies, params = add_newboid(classes[idx], boids, classes, energies, params=params)
-                        random_factors = np.append(random_factors, np.random.randint(1, 301, 1))
+        
+        if len(parents) != 0:
+            for parent in parents:
+                boids, classes, energies, params = add_newboid(parent, boids, classes, energies, params=params)
+                random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE, 1))
 
         boids, classes, energies, random_factors, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, params=params)
 
