@@ -28,7 +28,8 @@ COHESION_WEIGHT = np.array(config['COHESION_WEIGHT'])
 SEPARATION_WEIGHT = np.array(config['SEPARATION_WEIGHT'])
 MAX_ENERGY = np.array(config['MAX_ENERGY'])
 ENERGY_TO_REPRODUCE = config['ENERGY_TO_REPRODUCE']
-REPRODUCE_CYCLE = config['REPRODUCE_CYCLE']
+ENERGY_EATING = config['ENERGY_EATING']
+REPRODUCE_CYCLE = np.array(config['REPRODUCE_CYCLE'])
 DISTANCE_TO_EAT = config['DISTANCE_TO_EAT']
 PARAM_DEVIATION = config['PARAM_DEVIATION']
 TURN_FACTOR = config['TURN_FACTOR']
@@ -40,13 +41,6 @@ MARGIN_LEFT = config['MARGIN_LEFT']
 MARGIN_RIGHT = config['MARGIN_RIGHT']
 MARGIN_TOP = config['MARGIN_TOP']
 MARGIN_BOTTOM = config['MARGIN_BOTTOM']
-
-@nb.njit
-def frobenius_norm(a):
-    norms = np.empty(a.shape[0], dtype=a.dtype)
-    for i in nb.prange(a.shape[0]):
-        norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
-    return norms
 
 def add_newboid(parent, boids, classes, energies, params=None):
     new_row = np.array(
@@ -80,6 +74,13 @@ def remove_boid(boid, boids, classes, energies, random_factors, params=None):
     if params is not None:
         params = np.delete(params, boid, axis=0) 
     return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(energies, boid), np.delete(random_factors, boid), params
+
+@nb.njit
+def frobenius_norm(a):
+    norms = np.empty(a.shape[0], dtype=a.dtype)
+    for i in nb.prange(a.shape[0]):
+        norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
+    return norms
 
 @nb.njit
 def check_collisions(current_boid, classes, distances, resetEnergie, deleteable_boids):
@@ -152,7 +153,7 @@ def update_numba(boids, classes, energies, random_factors, gametic, params=None)
             alignment_weight = params[i, 1, :]
             cohesion_weight = params[i, 2, :]
 
-        angle_mask = create_angle_mask(boids, i, angle=3)
+        angle_mask = create_angle_mask(boids, i, angle=4)
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
 
         for c in range(len(CLASSES)):
@@ -262,9 +263,9 @@ def simulation(visual=True, sim_length=None):
     # params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) 
 
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
-    energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
-
-    random_factors = np.random.randint(1, REPRODUCE_CYCLE, size=classes.shape)
+    # energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
+    energies = np.concatenate([[MAX_ENERGY[0]] * CLASSES[0], [ENERGY_TO_REPRODUCE] * CLASSES[1]])
+    random_factors = np.concatenate([np.random.randint(1, REPRODUCE_CYCLE[i], size=number) for i, number in enumerate(CLASSES)]) 
 
     running = True
     gametic = 0
@@ -284,12 +285,12 @@ def simulation(visual=True, sim_length=None):
 
         deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params)
         for boid in energiesToReset:
-            energies[boid] = MAX_ENERGY[classes[boid]]
+            energies[boid] = max(ENERGY_EATING + energies[boid], MAX_ENERGY[1])
         
         if len(parents) != 0:
             for parent in parents:
                 boids, classes, energies, params = add_newboid(parent, boids, classes, energies, params=params)
-                random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE, 1))
+                random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE[classes[parent]], 1))
 
         boids, classes, energies, random_factors, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, params=params)
 
@@ -329,7 +330,7 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.close()
 
 if __name__ == "__main__":
-    visual = False # if True uses pygame to visualize the boids simulation
+    visual = True # if True uses pygame to visualize the boids simulation
 
     boid_counts = simulation(visual, sim_length=None) # Set sim_length to the number of simulation steps you want to run
     plot_boid_counts(boid_counts, len(CLASSES))
