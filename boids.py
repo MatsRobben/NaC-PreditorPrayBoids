@@ -228,11 +228,12 @@ def create_params_array(classes, separation_weight, alignment_weight, cohesion_w
     combined_result = np.stack((separation_result, alignment_result, cohesion_result), axis=1)
     return combined_result
 
-def pygame_sim():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Boids Simulation")
-    clock = pygame.time.Clock()
+def simulation(visual=True, sim_length=None):
+    if visual:
+        pygame.init()
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Boids Simulation")
+        clock = pygame.time.Clock()
 
     boids = np.array([np.random.uniform(0, WIDTH, size=NUM_BOIDS),  # x coordiante
                   np.random.uniform(0, HEIGHT, size=NUM_BOIDS), # y coordiante
@@ -258,12 +259,15 @@ def pygame_sim():
     boid_counts = []
 
     while running and len(boids) != 0:
-        screen.fill(BACKGROUND_COLOR)
-        draw_dotted_margin(screen, WIDTH, HEIGHT)
+        if visual: 
+            screen.fill(BACKGROUND_COLOR)
+            draw_dotted_margin(screen, WIDTH, HEIGHT)
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+        elif sim_length and gametic > sim_length:
+            break
 
         deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params)
         for boid in energiesToReset:
@@ -276,18 +280,21 @@ def pygame_sim():
 
         boids, classes, energies, random_factors, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, params=params)
 
-        draw_boids(screen, boids, classes)
+        if visual:
+            draw_boids(screen, boids, classes)
 
         # Count the number of boids per class
         counts = [np.sum(classes == i) for i in range(len(CLASSES))]
         boid_counts.append(counts)
 
-        pygame.display.flip()
-        clock.tick(30)
+        if visual:
+            pygame.display.flip()
+            clock.tick(30)
         gametic += 1
         energies -= 1
 
-    pygame.quit()
+    if visual:
+        pygame.quit()
 
     return boid_counts
 
@@ -309,7 +316,9 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.close()
 
 if __name__ == "__main__":
-    boid_counts = pygame_sim()
+    visual = False # if True uses pygame to visualize the boids simulation
+
+    boid_counts = simulation(visual, sim_length=None) # Set sim_length to the number of simulation steps you want to run
     plot_boid_counts(boid_counts, len(CLASSES))
 
 
