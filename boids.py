@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import math
 import os
 import json
+import pickle
 np.random.seed(None)
 
 def load_config(config_name):
@@ -42,7 +43,7 @@ MARGIN_RIGHT = config['MARGIN_RIGHT']
 MARGIN_TOP = config['MARGIN_TOP']
 MARGIN_BOTTOM = config['MARGIN_BOTTOM']
 
-def add_newboid(parent, boids, classes, energies, params=None):
+def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=None):
     new_row = np.array(
         [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
         dtype=np.float32)
@@ -68,12 +69,26 @@ def add_newboid(parent, boids, classes, energies, params=None):
         # new_params = np.random.normal(loc=parent_params, scale=PARAM_DEVIATION, size=parent_params.shape)
         # params = np.append(params, new_params[None, ...], axis=0)
 
-    return boids, classes, energies, params
+        # Track new boid's parameters
+        param_dict[next_boid_id] = new_params
 
-def remove_boid(boid, boids, classes, energies, random_factors, params=None):
+    # Assign unique ID to the new boid
+    next_boid_id += 1
+    boid_ids = np.append(boid_ids, next_boid_id)
+
+    return boids, classes, energies, boid_ids, next_boid_id, params
+
+def remove_boid(boid, boids, classes, energies, random_factors, boid_ids, params=None):
     if params is not None:
         params = np.delete(params, boid, axis=0) 
-    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(energies, boid), np.delete(random_factors, boid), params
+    return np.delete(boids, boid, 0), np.delete(classes, boid), np.delete(energies, boid), np.delete(random_factors, boid), np.delete(boid_ids, boid), params
+
+@nb.njit
+def frobenius_norm(a):
+    norms = np.empty(a.shape[0], dtype=a.dtype)
+    for i in nb.prange(a.shape[0]):
+        norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
+    return norms
 
 @nb.njit
 def frobenius_norm(a):
@@ -267,6 +282,13 @@ def simulation(visual=True, sim_length=None):
     energies = np.concatenate([[MAX_ENERGY[0]] * CLASSES[0], [ENERGY_TO_REPRODUCE] * CLASSES[1]])
     random_factors = np.concatenate([np.random.randint(1, REPRODUCE_CYCLE[i], size=number) for i, number in enumerate(CLASSES)]) 
 
+    # Initialize unique IDs for each boid
+    boid_ids = np.arange(NUM_BOIDS)
+    next_boid_id = NUM_BOIDS
+
+    family_tree = []
+    param_dict = {boid_id: params[i] for i, boid_id in enumerate(boid_ids)}
+
     running = True
     gametic = 0
 
@@ -289,10 +311,11 @@ def simulation(visual=True, sim_length=None):
         
         if len(parents) != 0:
             for parent in parents:
-                boids, classes, energies, params = add_newboid(parent, boids, classes, energies, params=params)
+                family_tree.append((boid_ids[parent], next_boid_id))
+                boids, classes, energies, boid_ids, next_boid_id, params = add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=params)
                 random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE[classes[parent]], 1))
 
-        boids, classes, energies, random_factors, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, params=params)
+        boids, classes, energies, random_factors, boid_ids, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, boid_ids, params=params)
 
         if visual:
             draw_boids(screen, boids, classes)
@@ -310,7 +333,7 @@ def simulation(visual=True, sim_length=None):
     if visual:
         pygame.quit()
 
-    return boid_counts
+    return boid_counts, family_tree, param_dict
 
 def plot_boid_counts(boid_counts, num_classes):
     class_names = ['Prey', 'Predator']
@@ -329,10 +352,59 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.savefig(f'figures/boid_counts_{config_name}.png')
     plt.close()
 
-if __name__ == "__main__":
-    visual = True # if True uses pygame to visualize the boids simulation
+def plot_family_tree(param_dict, family_tree, param_index_pairs):
+    fig, axes = plt.subplots(len(param_index_pairs), figsize=(12, 8))
+    
+    if len(param_index_pairs) == 1:
+        axes = [axes]
 
-    boid_counts = simulation(visual, sim_length=None) # Set sim_length to the number of simulation steps you want to run
+    for ax, (param_x, param_y) in zip(axes, param_index_pairs):
+        print(param_x, param_y)
+        # Plot the parameters for all boids
+        for boid_id, params in param_dict.items():
+            print(params)
+            break
+            # for class_idx in range(params.shape[1]):
+    #             ax.scatter(params[param_x, class_idx], params[param_y, class_idx], label=f'Class {class_idx}')
+        
+    #     # Draw parent-child lines
+    #     for parent_id, child_id in family_tree:
+    #         parent_params = param_dict[parent_id]
+    #         child_params = param_dict[child_id]
+    #         ax.plot([parent_params[param_x], child_params[param_x]], 
+    #                 [parent_params[param_y], child_params[param_y]], 'k-')
+        
+    #     ax.set_xlabel(f'Parameter {param_x}')
+    #     ax.set_ylabel(f'Parameter {param_y}')
+    #     ax.legend()
+    
+    plt.tight_layout()
+    plt.show()
+
+def save_simulation_data(filename, boid_counts, family_tree, param_dict):
+    with open(filename, 'wb') as f:
+        pickle.dump((boid_counts, family_tree, param_dict), f)
+
+def load_simulation_data(filename):
+    if os.path.exists(filename):
+        with open(filename, 'rb') as f:
+            return pickle.load(f)
+    else:
+        return None
+
+if __name__ == "__main__":
+    filename = 'simulation_data.pkl'
+    load_data = True  # Set this to False to run the simulation instead of loading data
+    visual = True # if True uses pygame to visualize the boids simulation
+    data = load_simulation_data(filename)
+
+    if load_data and data is not None:
+        boid_counts, family_tree, param_dict = data
+    else:
+        boid_counts, family_tree, param_dict = simulation(visual, sim_length=None) # Set sim_length to the number of simulation steps you want to run
+        save_simulation_data(filename, boid_counts, family_tree, param_dict)
+
+    plot_family_tree(param_dict, family_tree, [(0, 1), (0, 2), (1, 2)])
     plot_boid_counts(boid_counts, len(CLASSES))
 
 
