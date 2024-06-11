@@ -8,40 +8,41 @@ import json
 import pickle
 np.random.seed(None)
 
-def load_config(config_name):
-    with open(f'configs/{config_name}.json', 'r') as file:
-        config = json.load(file)
-    return config
+WIDTH, HEIGHT = 800, 800
 
-# Example of loading a config
-config_name = 'config1'  # Change this to load different configs
-config = load_config(config_name)
-
-# Assign individual variables
-WIDTH = config['WIDTH']
-HEIGHT = config['HEIGHT']
-CLASSES = np.array(config['CLASSES'])
+CLASSES = np.array([2, 1])
 NUM_BOIDS = np.sum(CLASSES)
-VISIBLE_RADIUS = np.array(config['VISIBLE_RADIUS'])
-SEPARATION_RADIUS = np.array(config['SEPARATION_RADIUS'])
-ALIGNMENT_WEIGHT = np.array(config['ALIGNMENT_WEIGHT'])
-COHESION_WEIGHT = np.array(config['COHESION_WEIGHT'])
-SEPARATION_WEIGHT = np.array(config['SEPARATION_WEIGHT'])
-MAX_ENERGY = np.array(config['MAX_ENERGY'])
-ENERGY_TO_REPRODUCE = config['ENERGY_TO_REPRODUCE']
-ENERGY_EATING = config['ENERGY_EATING']
-REPRODUCE_CYCLE = np.array(config['REPRODUCE_CYCLE'])
-DISTANCE_TO_EAT = config['DISTANCE_TO_EAT']
-PARAM_DEVIATION = config['PARAM_DEVIATION']
-TURN_FACTOR = config['TURN_FACTOR']
-BOID_LENGTH = config['BOID_LENGTH']
-BACKGROUND_COLOR = config['BACKGROUND_COLOR']
-BOID_COLOR = np.array(config['BOID_COLOR'])
-MAX_SPEED = np.array(config['MAX_SPEED'])
-MARGIN_LEFT = config['MARGIN_LEFT']
-MARGIN_RIGHT = config['MARGIN_RIGHT']
-MARGIN_TOP = config['MARGIN_TOP']
-MARGIN_BOTTOM = config['MARGIN_BOTTOM']
+VISIBLE_RADIUS = np.array([[50, 50],
+                          [50, 50]])
+SEPARATION_RADIUS = np.array([[10, 45],
+                             [10, 20]])
+ALIGNMENT_WEIGHT = np.array([[0.05, 0.05], 
+                             [0.05, 0.1]])
+COHESION_WEIGHT = np.array([[0.005, 0.005], 
+                            [0.005, 0.005]])
+SEPARATION_WEIGHT = np.array([[0.1, 0.9], 
+                              [0.1, 0.1]])
+
+# adding timers per game tick
+MAX_ENERGY = np.array([400, 600])
+ENERGY_TO_REPRODUCE = 300
+REPRODUCE_CYCLE = 150
+DISTANCE_TO_EAT = 10
+
+TRUN_FACTOR = 0.2
+BOID_LENGTH = [10, 14]
+BACKGROUND_COLOR = (220, 220, 220)
+BOID_COLOR = [(0, 0, 0), (255, 0, 0)]
+
+MAX_SPEED = np.array([3, 5])
+MARGIN_LEFT=100; MARGIN_RIGHT=WIDTH-100; MARGIN_TOP=100; MARGIN_BOTTOM=HEIGHT-100
+
+@nb.njit
+def frobenius_norm(a):
+    norms = np.empty(a.shape[0], dtype=a.dtype)
+    for i in nb.prange(a.shape[0]):
+        norms[i] = np.sqrt(a[i, 0] * a[i, 0] + a[i, 1] * a[i, 1])
+    return norms
 
 def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=None):
     new_row = np.array(
@@ -50,7 +51,6 @@ def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, classes[parent])
-
     if classes[parent] == 1:
         energies = np.append(energies, ENERGY_TO_REPRODUCE)
     else:
@@ -58,16 +58,16 @@ def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_
 
     if params is not None:
         # Recreate global params, for testing
-        boid_type = classes[parent]
-        boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
-        new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
-        params = np.append(params, new_params, axis=0)
+        # boid_type = classes[parent]
+        # boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
+        # new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
+        # params = np.append(params, new_params, axis=0)
         # Compleatly random
         # new_params = np.random.uniform(0, 1, size=(1, 3, len(CLASSES)))
         # Mutation
-        # parent_params = params[parent]
-        # new_params = np.random.normal(loc=parent_params, scale=PARAM_DEVIATION, size=parent_params.shape)
-        # params = np.append(params, new_params[None, ...], axis=0)
+        parent_params = params[parent]
+        new_params = np.random.normal(loc=parent_params, scale=0.1, size=parent_params.shape)
+        params = np.append(params, new_params[None, ...], axis=0)
 
         # Track new boid's parameters
         param_dict[next_boid_id] = new_params
@@ -115,10 +115,10 @@ def create_angle_mask(boids, current_boid, angle=3):
 @nb.njit
 def turn_at_egdes(boids):
     # Turn around a screen edges
-    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TURN_FACTOR
-    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TURN_FACTOR
-    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TURN_FACTOR
-    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TURN_FACTOR
+    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TRUN_FACTOR
+    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TRUN_FACTOR
+    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TRUN_FACTOR
+    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TRUN_FACTOR
 
     mask = np.logical_or(np.logical_or(np.logical_or(boids[:, 0] < 0, boids[:, 0] > WIDTH), boids[:, 1] < 0), boids[:, 1] > HEIGHT)
     boids[:, 2] = boids[:, 2] * np.logical_not(mask) - boids[:, 2] * mask
@@ -161,7 +161,7 @@ def update_numba(boids, classes, energies, random_factors, gametic, params=None)
             alignment_weight = params[i, 1, :]
             cohesion_weight = params[i, 2, :]
 
-        angle_mask = create_angle_mask(boids, i, angle=4)
+        angle_mask = create_angle_mask(boids, i, angle=3)
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
 
         for c in range(len(CLASSES)):
@@ -288,19 +288,16 @@ def simulation(visual=True, sim_length=None):
     boid_counts = []
 
     while running and len(boids) != 0:
-        if visual: 
-            screen.fill(BACKGROUND_COLOR)
-            draw_dotted_margin(screen, WIDTH, HEIGHT)
+        screen.fill(BACKGROUND_COLOR)
+        draw_dotted_margin(screen, WIDTH, HEIGHT)
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-        elif sim_length and gametic > sim_length:
-            break
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
         deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params)
         for boid in energiesToReset:
-            energies[boid] = max(ENERGY_EATING + energies[boid], MAX_ENERGY[1])
+            energies[boid] = MAX_ENERGY[classes[boid]]
         
         if len(parents) != 0:
             for parent in parents:
@@ -342,19 +339,8 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.ylabel('Number of Boids')
     plt.title('Number of Boids per Class Over Time')
     plt.legend()
-    plt.savefig(f'figures/boid_counts_{config_name}.png')
+    plt.savefig('figures/boid_counts.png')
     plt.close()
-
-def save_simulation_data(filename, boid_counts, family_tree, param_dict):
-    with open(filename, 'wb') as f:
-        pickle.dump((boid_counts, family_tree, param_dict), f)
-
-def load_simulation_data(filename):
-    if os.path.exists(filename):
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-    else:
-        return None
 
 def plot_family_tree(param_dict, family_tree, param_index_pairs):
     fig, axes = plt.subplots(len(param_index_pairs), figsize=(12, 8))

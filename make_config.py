@@ -5,8 +5,25 @@ def create_config(filename, config_data):
     with open(filename, 'w') as file:
         json.dump(config_data, file, indent=4)
 
-# Example config data
-config1 = {
+def load_config(filename):
+    with open(filename, 'r') as file:
+        return json.load(file)
+
+def update_config(loaded_config, default_config):
+    updated_config = loaded_config.copy()
+    
+    for key, default_value in default_config.items():
+        if key not in loaded_config:
+            updated_value = input(f"Variable '{key}' is missing. Enter a value (default {default_value}): ")
+            updated_config[key] = type(default_value)(json.loads(updated_value) if updated_value else default_value)
+        elif type(loaded_config[key]) != type(default_value):
+            updated_value = input(f"Variable '{key}' has a different type. Enter a value (default {default_value}): ")
+            updated_config[key] = type(default_value)(json.loads(updated_value) if updated_value else default_value)
+    
+    return updated_config
+
+# Example default config data
+default_config = {
     "WIDTH": 800,
     "HEIGHT": 800,
     "CLASSES": [50, 10],
@@ -34,6 +51,22 @@ config1 = {
 }
 
 if __name__ == "__main__":
-    os.makedirs('configs', exist_ok=True)
-    create_config('configs/config1.json', config1)
+    make_config = False
+    update_existing = True
 
+    if make_config:
+        os.makedirs('configs', exist_ok=True)
+        create_config('configs/config1.json', default_config)
+
+    if update_existing:
+        # Load the existing config
+        filename = 'configs/config_cohesive_flocking.json'
+        loaded_config = load_config(filename)
+        
+        # Update the config with user inputs for missing or mismatched variables
+        updated_config = update_config(loaded_config, default_config)
+        
+        # Save the updated config back to the file
+        create_config(filename, updated_config)
+
+        print("Config file updated successfully!")
