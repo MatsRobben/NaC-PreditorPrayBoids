@@ -4,36 +4,42 @@ import pygame
 import matplotlib.pyplot as plt
 import math
 import os
+import json
 np.random.seed(None)
 
-WIDTH, HEIGHT = 800, 800
+def load_config(config_name):
+    with open(f'configs/{config_name}.json', 'r') as file:
+        config = json.load(file)
+    return config
 
-CLASSES = np.array([100, 10])
+# Example of loading a config
+config_name = 'config1'  # Change this to load different configs
+config = load_config(config_name)
+
+# Assign individual variables
+WIDTH = config['WIDTH']
+HEIGHT = config['HEIGHT']
+CLASSES = np.array(config['CLASSES'])
 NUM_BOIDS = np.sum(CLASSES)
-VISIBLE_RADIUS = np.array([[50, 50],
-                          [50, 50]])
-SEPARATION_RADIUS = np.array([[10, 45],
-                             [10, 20]])
-ALIGNMENT_WEIGHT = np.array([[0.05, 0.05], 
-                             [0.05, 0.1]])
-COHESION_WEIGHT = np.array([[0.005, 0.005], 
-                            [0.005, 0.005]])
-SEPARATION_WEIGHT = np.array([[0.1, 0.9], 
-                              [0.1, 0.1]])
-
-# adding timers per game tick
-MAX_ENERGY = np.array([300, 400])
-ENERGY_TO_REPRODUCE = 300
-REPRODUCE_CYCLE = 200
-DISTANCE_TO_EAT = 10
-
-TRUN_FACTOR = 0.2
-BOID_LENGTH = [10, 14]
-BACKGROUND_COLOR = (220, 220, 220)
-BOID_COLOR = [(0, 0, 0), (255, 0, 0)]
-
-MAX_SPEED = np.array([3, 5])
-MARGIN_LEFT=100; MARGIN_RIGHT=WIDTH-100; MARGIN_TOP=100; MARGIN_BOTTOM=HEIGHT-100
+VISIBLE_RADIUS = np.array(config['VISIBLE_RADIUS'])
+SEPARATION_RADIUS = np.array(config['SEPARATION_RADIUS'])
+ALIGNMENT_WEIGHT = np.array(config['ALIGNMENT_WEIGHT'])
+COHESION_WEIGHT = np.array(config['COHESION_WEIGHT'])
+SEPARATION_WEIGHT = np.array(config['SEPARATION_WEIGHT'])
+MAX_ENERGY = np.array(config['MAX_ENERGY'])
+ENERGY_TO_REPRODUCE = config['ENERGY_TO_REPRODUCE']
+REPRODUCE_CYCLE = config['REPRODUCE_CYCLE']
+DISTANCE_TO_EAT = config['DISTANCE_TO_EAT']
+PARAM_DEVIATION = config['PARAM_DEVIATION']
+TURN_FACTOR = config['TURN_FACTOR']
+BOID_LENGTH = config['BOID_LENGTH']
+BACKGROUND_COLOR = config['BACKGROUND_COLOR']
+BOID_COLOR = np.array(config['BOID_COLOR'])
+MAX_SPEED = np.array(config['MAX_SPEED'])
+MARGIN_LEFT = config['MARGIN_LEFT']
+MARGIN_RIGHT = config['MARGIN_RIGHT']
+MARGIN_TOP = config['MARGIN_TOP']
+MARGIN_BOTTOM = config['MARGIN_BOTTOM']
 
 @nb.njit
 def frobenius_norm(a):
@@ -49,17 +55,24 @@ def add_newboid(parent, boids, classes, energies, params=None):
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, classes[parent])
-    energies = np.append(energies, MAX_ENERGY[classes[parent]])
+
+    if classes[parent] == 1:
+        energies = np.append(energies, ENERGY_TO_REPRODUCE)
+    else:
+        energies = np.append(energies, MAX_ENERGY[classes[parent]])
+
     if params is not None:
         # Recreate global params, for testing
-        # boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
-        # new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
+        boid_type = classes[parent]
+        boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
+        new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
+        params = np.append(params, new_params, axis=0)
         # Compleatly random
         # new_params = np.random.uniform(0, 1, size=(1, 3, len(CLASSES)))
         # Mutation
-        parent_params = params[parent]
-        new_params = np.random.normal(loc=parent_params, scale=0.1, size=parent_params.shape)
-        params = np.append(params, new_params[None, ...], axis=0)
+        # parent_params = params[parent]
+        # new_params = np.random.normal(loc=parent_params, scale=PARAM_DEVIATION, size=parent_params.shape)
+        # params = np.append(params, new_params[None, ...], axis=0)
 
     return boids, classes, energies, params
 
@@ -93,10 +106,10 @@ def create_angle_mask(boids, current_boid, angle=3):
 @nb.njit
 def turn_at_egdes(boids):
     # Turn around a screen edges
-    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TRUN_FACTOR
-    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TRUN_FACTOR
-    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TRUN_FACTOR
-    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TRUN_FACTOR
+    boids[:, 2] = boids[:, 2] + (boids[:, 0] < MARGIN_LEFT) * TURN_FACTOR
+    boids[:, 2] = boids[:, 2] - (boids[:, 0] > MARGIN_RIGHT) * TURN_FACTOR
+    boids[:, 3] = boids[:, 3] - (boids[:, 1] > MARGIN_BOTTOM) * TURN_FACTOR
+    boids[:, 3] = boids[:, 3] + (boids[:, 1] < MARGIN_TOP) * TURN_FACTOR
 
     mask = np.logical_or(np.logical_or(np.logical_or(boids[:, 0] < 0, boids[:, 0] > WIDTH), boids[:, 1] < 0), boids[:, 1] > HEIGHT)
     boids[:, 2] = boids[:, 2] * np.logical_not(mask) - boids[:, 2] * mask
@@ -244,9 +257,9 @@ def simulation(visual=True, sim_length=None):
     # To use global params
     # params = None 
     # To test if local params work the same as global
-    # params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) 
+    params = create_params_array(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) 
     # Initolize params randomly
-    params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) 
+    # params = np.random.uniform(0, 1, size=(NUM_BOIDS, 3, len(CLASSES))) 
 
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])
     energies = np.concatenate([[MAX_ENERGY[i]] * number for i, number in enumerate(CLASSES)])
@@ -312,7 +325,7 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.ylabel('Number of Boids')
     plt.title('Number of Boids per Class Over Time')
     plt.legend()
-    plt.savefig('figures/boid_counts.png')
+    plt.savefig(f'figures/boid_counts_{config_name}.png')
     plt.close()
 
 if __name__ == "__main__":
