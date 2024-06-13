@@ -14,7 +14,7 @@ def load_config(config_name):
     return config
 
 # Example of loading a config
-config_name = 'config1'  # Change this to load different configs
+config_name = 'config_cohesive_flocking'  # Change this to load different configs
 config = load_config(config_name)
 
 # Assign individual variables
@@ -44,7 +44,6 @@ MARGIN_TOP = config['MARGIN_TOP']
 MARGIN_BOTTOM = config['MARGIN_BOTTOM']
 
 def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=None):
-def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=None):
     new_row = np.array(
         [np.random.uniform(0, WIDTH), np.random.uniform(0, HEIGHT), np.random.uniform(-1, 1), np.random.uniform(-1, 1)],
         dtype=np.float32)
@@ -70,14 +69,6 @@ def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_
         # new_params = np.random.normal(loc=parent_params, scale=PARAM_DEVIATION, size=parent_params.shape)
         # params = np.append(params, new_params[None, ...], axis=0)
 
-        # Track new boid's parameters
-        param_dict[next_boid_id] = new_params
-
-    # Assign unique ID to the new boid
-    next_boid_id += 1
-    boid_ids = np.append(boid_ids, next_boid_id)
-
-    return boids, classes, energies, boid_ids, next_boid_id, params
         # Track new boid's parameters
         param_dict[next_boid_id] = new_params
 
@@ -296,7 +287,7 @@ def simulation(visual=True, sim_length=None):
 
     boid_counts = []
 
-    while running and len(boids) != 0:
+    while running and len(boids) != 0 and np.sum(classes == 0) != 0 and np.sum(classes == 1) != 0:
         if visual: 
             screen.fill(BACKGROUND_COLOR)
             draw_dotted_margin(screen, WIDTH, HEIGHT)
@@ -313,11 +304,13 @@ def simulation(visual=True, sim_length=None):
         
         if len(parents) != 0:
             for parent in parents:
-                family_tree.append((boid_ids[parent], next_boid_id))
-                boids, classes, energies, boid_ids, next_boid_id, params = add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=params)
-                random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE[classes[parent]], 1))
+                # If the perent is a pray and the total number of prays has exceded five time the original amound, 
+                # we assume that the food limit for the prey is reached, and we don't add the new pray.
+                if not (classes[parent] == 0 and np.sum(classes == 0) > CLASSES[0]*6):
+                    family_tree.append((boid_ids[parent], next_boid_id))
+                    boids, classes, energies, boid_ids, next_boid_id, params = add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=params)
+                    random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE[classes[parent]], 1))
 
-        boids, classes, energies, random_factors, boid_ids, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, boid_ids, params=params)
         boids, classes, energies, random_factors, boid_ids, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, boid_ids, params=params)
 
         if visual:
@@ -337,7 +330,6 @@ def simulation(visual=True, sim_length=None):
         pygame.quit()
 
     return boid_counts, family_tree, param_dict
-    return boid_counts, family_tree, param_dict
 
 def plot_boid_counts(boid_counts, num_classes):
     class_names = ['Prey', 'Predator']
@@ -355,46 +347,6 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.legend()
     plt.savefig(f'figures/boid_counts_{config_name}.png')
     plt.close()
-
-def plot_family_tree(param_dict, family_tree, param_index_pairs):
-    fig, axes = plt.subplots(len(param_index_pairs), figsize=(12, 8))
-    
-    if len(param_index_pairs) == 1:
-        axes = [axes]
-
-    for ax, (param_x, param_y) in zip(axes, param_index_pairs):
-        print(param_x, param_y)
-        # Plot the parameters for all boids
-        for boid_id, params in param_dict.items():
-            print(params)
-            break
-            # for class_idx in range(params.shape[1]):
-    #             ax.scatter(params[param_x, class_idx], params[param_y, class_idx], label=f'Class {class_idx}')
-        
-    #     # Draw parent-child lines
-    #     for parent_id, child_id in family_tree:
-    #         parent_params = param_dict[parent_id]
-    #         child_params = param_dict[child_id]
-    #         ax.plot([parent_params[param_x], child_params[param_x]], 
-    #                 [parent_params[param_y], child_params[param_y]], 'k-')
-        
-    #     ax.set_xlabel(f'Parameter {param_x}')
-    #     ax.set_ylabel(f'Parameter {param_y}')
-    #     ax.legend()
-    
-    plt.tight_layout()
-    plt.show()
-
-def save_simulation_data(filename, boid_counts, family_tree, param_dict):
-    with open(filename, 'wb') as f:
-        pickle.dump((boid_counts, family_tree, param_dict), f)
-
-def load_simulation_data(filename):
-    if os.path.exists(filename):
-        with open(filename, 'rb') as f:
-            return pickle.load(f)
-    else:
-        return None
 
 def plot_family_tree(param_dict, family_tree, param_index_pairs):
     fig, axes = plt.subplots(len(param_index_pairs), figsize=(12, 8))
