@@ -50,7 +50,6 @@ def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_
     new_row = new_row.reshape(1, -1)
     boids = np.append(boids, new_row, axis=0)
     classes = np.append(classes, classes[parent])
-
     if classes[parent] == 1:
         energies = np.append(energies, ENERGY_TO_REPRODUCE)
     else:
@@ -58,16 +57,16 @@ def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_
 
     if params is not None:
         # Recreate global params, for testing
-        boid_type = classes[parent]
-        boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
-        new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
-        params = np.append(params, new_params, axis=0)
+        # boid_type = classes[parent]
+        # boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
+        # new_params = create_params_array(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
+        # params = np.append(params, new_params, axis=0)
         # Compleatly random
         # new_params = np.random.uniform(0, 1, size=(1, 3, len(CLASSES)))
         # Mutation
-        # parent_params = params[parent]
-        # new_params = np.random.normal(loc=parent_params, scale=PARAM_DEVIATION, size=parent_params.shape)
-        # params = np.append(params, new_params[None, ...], axis=0)
+        parent_params = params[parent]
+        new_params = np.random.normal(loc=parent_params, scale=0.1, size=parent_params.shape)
+        params = np.append(params, new_params[None, ...], axis=0)
 
         # Track new boid's parameters
         param_dict[next_boid_id] = new_params
@@ -161,7 +160,7 @@ def update_numba(boids, classes, energies, random_factors, gametic, params=None)
             alignment_weight = params[i, 1, :]
             cohesion_weight = params[i, 2, :]
 
-        angle_mask = create_angle_mask(boids, i, angle=4)
+        angle_mask = create_angle_mask(boids, i, angle=3)
         distances = frobenius_norm(boids[i, :2] - boids[:, :2])
 
         for c in range(len(CLASSES)):
@@ -287,20 +286,17 @@ def simulation(visual=True, sim_length=None):
 
     boid_counts = []
 
-    while running and len(boids) != 0 and np.sum(classes == 0) != 0 and np.sum(classes == 1) != 0:
-        if visual: 
-            screen.fill(BACKGROUND_COLOR)
-            draw_dotted_margin(screen, WIDTH, HEIGHT)
+    while running and len(boids) != 0:
+        screen.fill(BACKGROUND_COLOR)
+        draw_dotted_margin(screen, WIDTH, HEIGHT)
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-        elif sim_length and gametic > sim_length:
-            break
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
         deleteableBoids, energiesToReset, parents = update_numba(boids, classes, energies, random_factors, gametic, params=params)
         for boid in energiesToReset:
-            energies[boid] = max(ENERGY_EATING + energies[boid], MAX_ENERGY[1])
+            energies[boid] = MAX_ENERGY[classes[boid]]
         
         if len(parents) != 0:
             for parent in parents:
@@ -345,7 +341,7 @@ def plot_boid_counts(boid_counts, num_classes):
     plt.ylabel('Number of Boids')
     plt.title('Number of Boids per Class Over Time')
     plt.legend()
-    plt.savefig(f'figures/boid_counts_{config_name}.png')
+    plt.savefig('figures/boid_counts.png')
     plt.close()
 
 def plot_family_tree(param_dict, family_tree, param_index_pairs):
