@@ -13,7 +13,7 @@ def load_config(config_name):
     return config
 
 # Example of loading a config
-config_name = 'config1'  # Change this to load different configs
+config_name = 'config_cohesive_flocking'  # Change this to load different configs
 config = load_config(config_name)
 
 # Assign individual variables
@@ -272,7 +272,7 @@ def simulation(visual=True, sim_length=None):
 
     boid_counts = []
 
-    while running and len(boids) != 0:
+    while running and len(boids) != 0 and np.sum(classes == 0) != 0 and np.sum(classes == 1) != 0:
         if visual: 
             screen.fill(BACKGROUND_COLOR)
             draw_dotted_margin(screen, WIDTH, HEIGHT)
@@ -289,8 +289,11 @@ def simulation(visual=True, sim_length=None):
         
         if len(parents) != 0:
             for parent in parents:
-                boids, classes, energies, params = add_newboid(parent, boids, classes, energies, params=params)
-                random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE[classes[parent]], 1))
+                # If the perent is a pray and the total number of prays has exceded five time the original amound, 
+                # we assume that the food limit for the prey is reached, and we don't add the new pray.
+                if not (classes[parent] == 0 and np.sum(classes == 0) > CLASSES[0]*6):
+                    boids, classes, energies, params = add_newboid(parent, boids, classes, energies, params=params)
+                    random_factors = np.append(random_factors, np.random.randint(1, REPRODUCE_CYCLE[classes[parent]], 1))
 
         boids, classes, energies, random_factors, params = remove_boid(deleteableBoids, boids, classes, energies, random_factors, params=params)
 
