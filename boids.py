@@ -286,7 +286,7 @@ def simulation(visual=True, sim_length=None):
 
     boid_counts = []
 
-    while running and len(boids) != 0:
+    while running and len(boids) != 0 and np.sum(classes == 0) != 0 and np.sum(classes == 1) != 0:
         screen.fill(BACKGROUND_COLOR)
         draw_dotted_margin(screen, WIDTH, HEIGHT)
 
@@ -386,7 +386,7 @@ def load_simulation_data(filename):
 
 if __name__ == "__main__":
     filename = 'simulation_data.pkl'
-    load_data = True  # Set this to False to run the simulation instead of loading data
+    load_data = False  # Set this to False to run the simulation instead of loading data
     visual = True # if True uses pygame to visualize the boids simulation
     data = load_simulation_data(filename)
 
@@ -396,7 +396,7 @@ if __name__ == "__main__":
         boid_counts, family_tree, param_dict = simulation(visual, sim_length=None) # Set sim_length to the number of simulation steps you want to run
         save_simulation_data(filename, boid_counts, family_tree, param_dict)
 
-    plot_family_tree(param_dict, family_tree, [(0, 1), (0, 2), (1, 2)])
-    plot_boid_counts(boid_counts, len(CLASSES))
+    # plot_family_tree(param_dict, family_tree, [(0, 1), (0, 2), (1, 2)])
+    # plot_boid_counts(boid_counts, len(CLASSES))
 
 
