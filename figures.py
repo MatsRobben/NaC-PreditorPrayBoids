@@ -89,7 +89,7 @@ def plot_distribution_over_time(quantiles_prey, quantiles_predator, config_name)
     None (plots the distribution)
     """
     # Define the parameters and their corresponding subplot positions
-    parameters = ['Separation Self', 'Separation Other', 'Alignment Self', 'Alignment Other', 'Alignment Self', 'Alignment Other']
+    parameters = ['Separation Self', 'Separation Other', 'Alignment Self', 'Alignment Other', 'Cohesion Self', 'Cohesion Other']
     subplot_positions = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
 
     # Create a figure with subplots
