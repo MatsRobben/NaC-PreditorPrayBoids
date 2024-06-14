@@ -43,6 +43,7 @@ MARGIN_RIGHT = config['MARGIN_RIGHT']
 MARGIN_TOP = config['MARGIN_TOP']
 MARGIN_BOTTOM = config['MARGIN_BOTTOM']
 
+# Set to False if you wish to use Global parameters and not do mutation
 EVOLUTION = True
 
 def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_dict, params=None):
@@ -365,6 +366,9 @@ def simulation(visual=True, sim_length=None):
 
     # Run while not exited pygame and non of the classes are empty
     while running and np.sum(classes == 0) != 0 and np.sum(classes == 1) != 0:
+        if sim_length and gametic > sim_length:
+            running = False
+
         if visual:
             screen.fill(BACKGROUND_COLOR)
             draw_dotted_margin(screen, WIDTH, HEIGHT)
