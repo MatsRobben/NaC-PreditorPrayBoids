@@ -61,9 +61,12 @@
         800
     ],
     "ENERGY_TO_REPRODUCE": 700,
-    "REPRODUCE_CYCLE": 400,
+    "REPRODUCE_CYCLE": [
+        200,
+        400
+    ],
     "DISTANCE_TO_EAT": 15,
-    "PARAM_DEVIATION": 0.1,
+    "PARAM_DEVIATION": 0.05,
     "TURN_FACTOR": 0.2,
     "BOID_LENGTH": [
         10,
@@ -88,10 +91,11 @@
     ],
     "MAX_SPEED": [
         3,
-        5
+        4
     ],
     "MARGIN_LEFT": 100,
     "MARGIN_RIGHT": 700,
     "MARGIN_TOP": 100,
-    "MARGIN_BOTTOM": 700
+    "MARGIN_BOTTOM": 700,
+    "ENERGY_EATING": 100
 }
