@@ -74,7 +74,7 @@ def add_newboid(parent, boids, classes, energies, boid_ids, next_boid_id, param_
         # Recreate global params
         boid_type = classes[parent]
         boid_class = np.eye(len(CLASSES), dtype=int)[boid_type]
-        new_params = create_params_from_single_point(boid_class, [SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT])
+        new_params = create_params_from_single_point(boid_class, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT)
         params = np.append(params, new_params, axis=0)
         
     # Track new boid's parameters
@@ -271,14 +271,12 @@ def draw_dotted_margin(screen, width, height, dot_length=10, dot_spacing=5, colo
     for x in range(0, width, dot_length + dot_spacing * 2):
         pygame.draw.line(screen, line_color, (x, MARGIN_BOTTOM), (min(x + dot_length, width), MARGIN_BOTTOM), line_thickness)
 
-def create_params_from_single_point(classes, array):
-    # Function to create parameter arrays from the global parameters.
-    results = []
-    for weights in array:
-        result = np.vstack([[weights[i]] * count for i, count in enumerate(classes)])
-        results.append(result)
-
-    combined_result = np.stack(results, axis=1)
+def create_params_from_single_point(classes, separation_weight, alignment_weight, cohesion_weight):
+    separation_result = np.vstack([separation_weight[i] for i, count in enumerate(classes) for _ in range(count)])
+    alignment_result = np.vstack([alignment_weight[i] for i, count in enumerate(classes) for _ in range(count)])
+    cohesion_result = np.vstack([cohesion_weight[i] for i, count in enumerate(classes) for _ in range(count)])
+    
+    combined_result = np.stack((separation_result, alignment_result, cohesion_result), axis=1)
     return combined_result
 
 def create_params_from_ranges(ranges):
@@ -337,13 +335,21 @@ def simulation(visual=True, sim_length=None):
     
     if EVOLUTION:
         ranges = [
-            [[(0.0, 0.5), (0.8, 1.0)], [(0.2, 0.6), (0.4, 0.8)], [(0.0, 0.3), (0.5, 0.9)]], # Prey
-            [[(0.1, 0.5), (0.3, 0.7)], [(0.2, 0.6), (0.4, 0.8)], [(0.0, 0.3), (0.5, 0.9)]]  # Predators
+            # Sep Self    Sep Other    Align Self   Align Other  Coh Self     Coh Other
+            [[(0., 0.0), (0.0, 0.0)], [(0.0, 0.0), (0.0, 0.0)], [(0.0, 0.0), (0.0, 0.0)]], # Prey
+            # Sep other   Sep Self     ALign Other  Align Self   Coh Other    Coh Self
+            [[(0.0, 0.0), (0.0, 0.0)], [(0.0, 0.0), (0.0, 0.0)], [(0.0, 0.0), (0.0, 0.0)]]  # Predators
         ]
+
+        # ranges = [#Seperation           Allignment               Cohesion
+        #     [[(0.05, 0.2), (0.8, 1.6)], [(0.0, 0.15), (0.0, 0.1)], [(0.0, 0.105), (0.0, 0.1)]], # Prey
+        #     [[(0.0, 0.1), (0.0, 0.5)], [(0.0, 0.1), (0.0, 0.2)], [(0.000, 0.015), (0.0, 0.2)]]  # Predators
+        # ]
+
         params = create_params_from_ranges(ranges)
     else:
         # Global parameters
-        params = create_params_from_single_point(classes, [SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT]) 
+        params = create_params_from_single_point(CLASSES, SEPARATION_WEIGHT, ALIGNMENT_WEIGHT, COHESION_WEIGHT) 
     
     # Arrays for Boid classes energies and random factors
     classes = np.concatenate([[i] * number for i, number in enumerate(CLASSES)])

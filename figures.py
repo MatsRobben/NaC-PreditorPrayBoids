@@ -90,22 +90,23 @@ def plot_distribution_over_time(quantiles_prey, quantiles_predator, config_name)
     """
     # Define the parameters and their corresponding subplot positions
     parameters = ['Separation Self', 'Separation Other', 'Alignment Self', 'Alignment Other', 'Cohesion Self', 'Cohesion Other']
-    subplot_positions = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
+    subplot_positions_prey = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]
+    subplot_positions_predator = [(0, 1), (0, 0), (1, 1), (1, 0), (2, 1), (2, 0)]
 
     # Create a figure with subplots
     fig, axs = plt.subplots(6, 2, figsize=(14, 18))
 
-    for i, (param, pos) in enumerate(zip(parameters, subplot_positions)):
+    for i, (param, pos_pray, pos_predator) in enumerate(zip(parameters, subplot_positions_prey, subplot_positions_predator)):
         # Plot 'Prey' quantiles for current parameter
         ax = axs[i, 0]
         
         for q_low, q_high in zip(['q1', 'q5', 'q25'], ['q99', 'q95', 'q75']):
-            array_low = np.array(quantiles_prey[q_low])[:, pos[0], pos[1]]
-            array_high = np.array(quantiles_prey[q_high])[:, pos[0], pos[1]]
+            array_low = np.array(quantiles_prey[q_low])[:, pos_pray[0], pos_pray[1]]
+            array_high = np.array(quantiles_prey[q_high])[:, pos_pray[0], pos_pray[1]]
             ax.fill_between(x=range(len(array_low)), y1=array_low, y2=array_high,
                             alpha=0.3, label='', color="tab:blue")
         
-        array_median = np.array(quantiles_prey['q50'])[:, pos[0], pos[1]]
+        array_median = np.array(quantiles_prey['q50'])[:, pos_pray[0], pos_pray[1]]
         ax.plot(range(len(array_median)), array_median, '-', color="tab:blue", label='Prey Median')
 
         # Add title, labels, and legend
@@ -117,12 +118,12 @@ def plot_distribution_over_time(quantiles_prey, quantiles_predator, config_name)
         ax = axs[i, 1]
         
         for q_low, q_high in zip(['q1', 'q5', 'q25'], ['q99', 'q95', 'q75']):
-            array_low = np.array(quantiles_predator[q_low])[:, pos[0], pos[1]]
-            array_high = np.array(quantiles_predator[q_high])[:, pos[0], pos[1]]
+            array_low = np.array(quantiles_predator[q_low])[:, pos_predator[0], pos_predator[1]]
+            array_high = np.array(quantiles_predator[q_high])[:, pos_predator[0], pos_predator[1]]
             ax.fill_between(x=range(len(array_low)), y1=array_low, y2=array_high,
                             alpha=0.3, label='', color="tab:orange")
         
-        array_median = np.array(quantiles_predator['q50'])[:, pos[0], pos[1]]
+        array_median = np.array(quantiles_predator['q50'])[:, pos_predator[0], pos_predator[1]]
         ax.plot(range(len(array_median)), array_median, '-', color="tab:orange", label='Predator Median')
 
         # Add title, labels, and legend
